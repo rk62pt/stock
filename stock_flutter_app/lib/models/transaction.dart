@@ -40,4 +40,21 @@ class Transaction {
       price: (json['price'] as num).toDouble(),
     );
   }
+  Transaction copyWith({
+    String? id,
+    String? symbol,
+    DateTime? date,
+    TransactionType? type,
+    int? shares,
+    double? price,
+  }) {
+    return Transaction(
+      id: id ?? this.id,
+      symbol: symbol ?? this.symbol,
+      date: date ?? this.date,
+      type: type ?? this.type,
+      shares: shares ?? this.shares,
+      price: price ?? this.price,
+    );
+  }
 }

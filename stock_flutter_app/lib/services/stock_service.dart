@@ -3,6 +3,7 @@ import 'dart:convert';
 // import 'package:flutter/foundation.dart' show kIsWeb; // Removed
 import 'package:http/http.dart' as http;
 import '../models/stock.dart';
+import 'database_helper.dart';
 
 class StockService {
   // API Key is now passed in
@@ -49,14 +50,108 @@ class StockService {
     }
   }
 
+  static Future<int> syncStockList(String apiKey, {bool force = false}) async {
+    final lastSync = await DatabaseHelper().getLastSyncTime();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final count = await DatabaseHelper().getStockSymbolCount();
+
+    // 24 hours = 86400000 ms
+    // Sync if: Force OR Never synced OR table empty OR > 24h ago
+    bool shouldSync = force ||
+        (lastSync == null) ||
+        (count == 0) ||
+        ((now - lastSync) >= 86400000);
+
+    if (!shouldSync) {
+      print(
+          'Stock list sync skipped (Count: $count, Last Sync: ${DateTime.fromMillisecondsSinceEpoch(lastSync!)})');
+      return 0;
+    }
+
+    print('Starting stock list sync...');
+    final List<Map<String, dynamic>> allTickers = [];
+
+    // Fetch TWSE
+    allTickers.addAll(await _fetchExchangeTickers('TWSE', apiKey));
+    // Fetch TPEx
+    allTickers.addAll(await _fetchExchangeTickers('TPEx', apiKey));
+
+    if (allTickers.isNotEmpty) {
+      await DatabaseHelper().batchInsertStockSymbols(allTickers);
+      await DatabaseHelper().setLastSyncTime(now);
+      print(
+          'Stock list sync completed. Inserted ${allTickers.length} symbols.');
+      return allTickers.length;
+    } else {
+      print('Stock list sync failed or empty. (Got ${allTickers.length})');
+      return 0; // or throw
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> _fetchExchangeTickers(
+      String exchange, String apiKey) async {
+    try {
+      // Simplify params: type=EQUITY, exchange=...
+      final uri = Uri.parse(
+              'https://api.fugle.tw/marketdata/v1.0/stock/intraday/tickers')
+          .replace(queryParameters: {
+        'type': 'EQUITY',
+        'exchange': exchange,
+        // 'isNormal': 'true', // Removed to ensure we get data first
+      });
+
+      print('Fetching tickers: $uri');
+      final response = await http.get(uri, headers: {'X-API-KEY': apiKey});
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['data'] is List) {
+          final list = data['data'] as List;
+          print('Fetched ${list.length} tickers for $exchange');
+          return list.map((item) {
+            return {
+              'symbol': item['symbol'],
+              'name': item['name'],
+              'type': item['type'],
+            };
+          }).toList();
+        }
+      } else {
+        print(
+            'Failed to fetch $exchange tickers: ${response.statusCode} ${response.body}');
+      }
+    } catch (e) {
+      print('Error fetching tickers for $exchange: $e');
+    }
+    return [];
+  }
+
   static Future<List<StockData>> searchStocks(
       String query, String apiKey) async {
     if (apiKey.isEmpty) return [];
 
-    // Fugle doesn't have a simple public search API in the free tier usually.
-    // We can fallback to just returning what we have or implement a simple local filter if we had a list.
-    // Since we don't have a full list anymore, we might just return empty or
-    // try to fetch the query as a symbol directly?
+    // 1. Try Local Search
+    try {
+      final localResults = await DatabaseHelper().searchLocalSymbols(query);
+      if (localResults.isNotEmpty) {
+        return localResults.map((map) {
+          return StockData(
+            symbol: map['symbol'] as String,
+            regularMarketPrice: 0, // Price unknown in search
+            regularMarketChange: 0,
+            regularMarketChangePercent: 0,
+            shortName: map['name'] as String,
+            longName: map['name'] as String,
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print('Local search error: $e');
+    }
+
+    // 2. Fallback to Online "Exact Match" (Previous Logic)
+    // If local DB is empty or miss, try to treat query as symbol
+    // Only if query looks like a symbol (digits)
 
     // Attempt to treat query as symbol
     final stock = await _fetchSingleFugleQuote(query, apiKey);

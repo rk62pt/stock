@@ -169,39 +169,62 @@ class _StockCardState extends State<StockCard> {
               ],
             ),
 
-            // Portfolio Section (if has holdings)
-            if (hasHoldings) ...[
+            // Portfolio Section
+            if (hasHoldings ||
+                _holdings['totalRealizedProfit'] != null &&
+                    _holdings['totalRealizedProfit'] != 0) ...[
               const Divider(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('持有: $shares 股',
-                          style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w500)),
-                      Text('均價: ${avgCost.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.grey)),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text('$plSign${profitLoss.toStringAsFixed(0)}',
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: plColor)),
-                      Text(
-                        '$plSign${percentFormat.format(profitLossPercent)}%',
-                        style: TextStyle(fontSize: 12, color: plColor),
-                      ),
-                    ],
-                  )
-                ],
-              )
+              if (hasHoldings)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('持有: $shares 股',
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w500)),
+                        Text('均價: ${avgCost.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey)),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('未實現: $plSign${profitLoss.toStringAsFixed(0)}',
+                            style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: plColor)),
+                        Text(
+                          '$plSign${percentFormat.format(profitLossPercent)}%',
+                          style: TextStyle(fontSize: 12, color: plColor),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              if (hasHoldings && (_holdings['totalRealizedProfit'] ?? 0) != 0)
+                const SizedBox(height: 8),
+              if ((_holdings['totalRealizedProfit'] ?? 0) != 0)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('已實現損益',
+                        style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    Text(
+                      '${(_holdings['totalRealizedProfit'] as double) > 0 ? '+' : ''}${(_holdings['totalRealizedProfit'] as double).toStringAsFixed(0)}',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              (_holdings['totalRealizedProfit'] as double) > 0
+                                  ? Colors.red
+                                  : Colors.green),
+                    ),
+                  ],
+                ),
             ]
           ],
         ),
