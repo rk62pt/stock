@@ -1,4 +1,4 @@
-enum TransactionType { buy, sell }
+enum TransactionType { buy, sell, stockDividend, cashDividend }
 
 class Transaction {
   final String id;
@@ -29,13 +29,22 @@ class Transaction {
   }
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
+    String typeStr = json['type'].toString();
+    TransactionType tType = TransactionType.buy;
+
+    if (typeStr.contains('sell')) {
+      tType = TransactionType.sell;
+    } else if (typeStr.contains('stockDividend')) {
+      tType = TransactionType.stockDividend;
+    } else if (typeStr.contains('cashDividend')) {
+      tType = TransactionType.cashDividend;
+    }
+
     return Transaction(
       id: json['id'],
       symbol: json['symbol'],
       date: DateTime.parse(json['date']),
-      type: json['type'] == 'TransactionType.buy'
-          ? TransactionType.buy
-          : TransactionType.sell,
+      type: tType,
       shares: json['shares'],
       price: (json['price'] as num).toDouble(),
     );

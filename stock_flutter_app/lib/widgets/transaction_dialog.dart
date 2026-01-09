@@ -28,8 +28,19 @@ class _TransactionDialogState extends State<TransactionDialog> {
 
   void _submit() {
     if (_formKey.currentState!.validate()) {
-      final shares = int.parse(_sharesController.text);
-      final price = double.parse(_priceController.text);
+      int shares = 0;
+      double price = 0.0;
+
+      if (_type == TransactionType.stockDividend) {
+        shares = int.parse(_sharesController.text);
+        price = 0.0; // Free shares
+      } else if (_type == TransactionType.cashDividend) {
+        shares = 0; // No shares added
+        price = double.parse(_priceController.text); // Total amount
+      } else {
+        shares = int.parse(_sharesController.text);
+        price = double.parse(_priceController.text);
+      }
 
       final transaction = Transaction(
         id: const Uuid().v4(),
@@ -78,56 +89,79 @@ class _TransactionDialogState extends State<TransactionDialog> {
 
               const SizedBox(height: 10),
 
-              // Buy/Sell Segment
-              Row(
-                children: [
-                  Expanded(
-                    child: RadioListTile<TransactionType>(
-                      title: const Text('買入'),
-                      value: TransactionType.buy,
-                      groupValue: _type,
-                      onChanged: (val) => setState(() => _type = val!),
-                      activeColor: Colors
-                          .red, // Taiwan stock color for Up/Buy is usually Red
-                    ),
+              // Transaction Type Dropdown
+              DropdownButtonFormField<TransactionType>(
+                value: _type,
+                decoration: const InputDecoration(labelText: '交易類型'),
+                items: const [
+                  DropdownMenuItem(
+                    value: TransactionType.buy,
+                    child: Text('買進 (Buy)'),
                   ),
-                  Expanded(
-                    child: RadioListTile<TransactionType>(
-                      title: const Text('賣出'),
-                      value: TransactionType.sell,
-                      groupValue: _type,
-                      onChanged: (val) => setState(() => _type = val!),
-                      activeColor: Colors
-                          .green, // Taiwan stock color for Down/Sell is usually Green
-                    ),
+                  DropdownMenuItem(
+                    value: TransactionType.sell,
+                    child: Text('賣出 (Sell)'),
+                  ),
+                  DropdownMenuItem(
+                    value: TransactionType.stockDividend,
+                    child: Text('配股 (Stock Dividend)'),
+                  ),
+                  DropdownMenuItem(
+                    value: TransactionType.cashDividend,
+                    child: Text('配息 (Cash Dividend)'),
                   ),
                 ],
-              ),
-
-              // Shares
-              TextFormField(
-                controller: _sharesController,
-                decoration: const InputDecoration(labelText: '股數'),
-                keyboardType: TextInputType.number,
-                validator: (val) {
-                  if (val == null || val.isEmpty) return '請輸入股數';
-                  if (int.tryParse(val) == null) return '請輸入有效數字';
-                  return null;
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _type = val;
+                      // clear inputs when type changes mostly for clarity
+                      // _sharesController.clear();
+                      // _priceController.clear();
+                    });
+                  }
                 },
               ),
 
-              // Price
-              TextFormField(
-                controller: _priceController,
-                decoration: const InputDecoration(labelText: '價格 (元)'),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                validator: (val) {
-                  if (val == null || val.isEmpty) return '請輸入價格';
-                  if (double.tryParse(val) == null) return '請輸入有效數字';
-                  return null;
-                },
-              ),
+              const SizedBox(height: 10),
+
+              // Shares / Amount Field
+              // For Cash Dividend, we use this field as 'Amount' (Total Cash) conceptually,
+              // but we store it in Price? Or Shares?
+              // Let's stick to:
+              // Stock Dividend: Shares field = shares. Price field = 0.
+              // Cash Dividend: Shares field = 1 (hidden?). Price field = Amount.
+              // But to keep it simple, let's keep both fields visible but change labels.
+
+              if (_type != TransactionType.cashDividend)
+                TextFormField(
+                  controller: _sharesController,
+                  decoration: const InputDecoration(labelText: '股數'),
+                  keyboardType: TextInputType.number,
+                  validator: (val) {
+                    if (val == null || val.isEmpty) return '請輸入股數';
+                    if (int.tryParse(val) == null) return '請輸入有效數字';
+                    return null;
+                  },
+                ),
+
+              // Price Field
+              if (_type != TransactionType.stockDividend)
+                TextFormField(
+                  controller: _priceController,
+                  decoration: InputDecoration(
+                    labelText: _type == TransactionType.cashDividend
+                        ? '總金額 (元)'
+                        : '價格 (元)',
+                  ),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  validator: (val) {
+                    if (val == null || val.isEmpty) return '請輸入金額';
+                    if (double.tryParse(val) == null) return '請輸入有效數字';
+                    return null;
+                  },
+                ),
             ],
           ),
         ),

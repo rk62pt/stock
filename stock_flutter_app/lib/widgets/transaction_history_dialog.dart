@@ -6,9 +6,13 @@ import '../services/portfolio_service.dart';
 
 class TransactionHistoryDialog extends StatefulWidget {
   final String symbol;
+  final String? stockName;
 
-  const TransactionHistoryDialog({Key? key, required this.symbol})
-      : super(key: key);
+  const TransactionHistoryDialog({
+    Key? key,
+    required this.symbol,
+    this.stockName,
+  }) : super(key: key);
 
   @override
   _TransactionHistoryDialogState createState() =>
@@ -65,7 +69,9 @@ class _TransactionHistoryDialogState extends State<TransactionHistoryDialog> {
         .sort((a, b) => b.transaction.date.compareTo(a.transaction.date));
 
     return AlertDialog(
-      title: Text('${widget.symbol} 交易紀錄'),
+      insetPadding:
+          const EdgeInsets.symmetric(horizontal: 10.0, vertical: 24.0),
+      title: Text('${widget.symbol} ${widget.stockName ?? ''} 交易紀錄'),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -94,48 +100,118 @@ class _TransactionHistoryDialogState extends State<TransactionHistoryDialog> {
                 itemBuilder: (context, index) {
                   final item = displayList[index];
                   final t = item.transaction;
-                  final isBuy = t.type == TransactionType.buy;
-                  final dateStr = DateFormat('yyyy/MM/dd').format(t.date);
 
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor:
-                          isBuy ? Colors.red.shade100 : Colors.green.shade100,
-                      child: Text(isBuy ? '買' : '賣',
-                          style: TextStyle(
-                              color: isBuy ? Colors.red : Colors.green)),
+                  Color iconBgColor;
+                  Color iconColor;
+                  String iconText;
+
+                  switch (t.type) {
+                    case TransactionType.buy:
+                      iconBgColor = Colors.red.shade100;
+                      iconColor = Colors.red;
+                      iconText = '買';
+                      break;
+                    case TransactionType.sell:
+                      iconBgColor = Colors.green.shade100;
+                      iconColor = Colors.green;
+                      iconText = '賣';
+                      break;
+                    case TransactionType.stockDividend:
+                      iconBgColor = Colors.blue.shade100;
+                      iconColor = Colors.blue;
+                      iconText = '股';
+                      break;
+                    case TransactionType.cashDividend:
+                      iconBgColor = Colors.orange.shade100;
+                      iconColor = Colors.orange;
+                      iconText = '息';
+                      break;
+                  }
+
+                  String titleText;
+                  if (t.type == TransactionType.cashDividend) {
+                    titleText = '配息: ${t.price.toStringAsFixed(0)}';
+                  } else if (t.type == TransactionType.stockDividend) {
+                    titleText = '配股: ${t.shares} 股';
+                  } else {
+                    titleText = '${t.shares} 股 @ ${t.price}';
+                  }
+
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    decoration: const BoxDecoration(
+                      border: Border(bottom: BorderSide(color: Colors.black12)),
                     ),
-                    title: Text('${t.shares} 股 @ ${t.price}'),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
                       children: [
-                        Text(dateStr),
-                        if (!isBuy && item.realizedPL != null)
-                          Text(
-                            '損益: ${item.realizedPL!.toStringAsFixed(0)}',
+                        // Date
+                        Text(DateFormat('yy/MM/dd').format(t.date),
                             style: TextStyle(
-                              color: item.realizedPL! >= 0
-                                  ? Colors.red
-                                  : Colors.green,
-                              fontWeight: FontWeight.bold,
-                            ),
+                                fontSize: 13, color: Colors.grey[600])),
+                        const SizedBox(width: 8),
+                        // Type Badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: iconBgColor,
+                              borderRadius: BorderRadius.circular(4)),
+                          child: Text(iconText,
+                              style: TextStyle(
+                                  color: iconColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 8),
+                        // Info & PL Column
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                titleText,
+                                style: const TextStyle(fontSize: 15),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if ((t.type == TransactionType.sell ||
+                                      t.type == TransactionType.cashDividend) &&
+                                  item.realizedPL != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2.0),
+                                  child: Text(
+                                    '損益: ${item.realizedPL! > 0 ? '+' : ''}${item.realizedPL!.toStringAsFixed(0)}',
+                                    style: TextStyle(
+                                      color: item.realizedPL! >= 0
+                                          ? Colors.red
+                                          : Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, size: 20),
-                          onPressed: () => _showAddEditDialog(t),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.delete,
+                        // Actions
+                        PopupMenuButton<String>(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.more_vert,
                               size: 20, color: Colors.grey),
-                          onPressed: () {
-                            _confirmDelete(t);
+                          onSelected: (val) {
+                            if (val == 'edit') _showAddEditDialog(t);
+                            if (val == 'delete') _confirmDelete(t);
                           },
-                        ),
+                          itemBuilder: (ctx) => [
+                            const PopupMenuItem(
+                                value: 'edit', child: Text('編輯')),
+                            const PopupMenuItem(
+                                value: 'delete',
+                                child: Text('刪除',
+                                    style: TextStyle(color: Colors.red))),
+                          ],
+                        )
                       ],
                     ),
                   );
@@ -245,8 +321,19 @@ class _AddEditTransactionDialogState extends State<AddEditTransactionDialog> {
       _errorMessage = null;
     });
 
-    final shares = int.tryParse(_sharesController.text);
-    final price = double.tryParse(_priceController.text);
+    int? shares;
+    double? price;
+
+    if (_type == TransactionType.stockDividend) {
+      shares = int.tryParse(_sharesController.text);
+      price = 0.0;
+    } else if (_type == TransactionType.cashDividend) {
+      shares = 0;
+      price = double.tryParse(_priceController.text);
+    } else {
+      shares = int.tryParse(_sharesController.text);
+      price = double.tryParse(_priceController.text);
+    }
 
     if (shares == null || price == null) {
       setState(() {
@@ -303,24 +390,35 @@ class _AddEditTransactionDialogState extends State<AddEditTransactionDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Type Segment
-            SegmentedButton<TransactionType>(
-              segments: const [
-                ButtonSegment(
+            // Transaction Type Dropdown
+            DropdownButtonFormField<TransactionType>(
+              value: _type,
+              decoration: const InputDecoration(labelText: '交易類型'),
+              items: const [
+                DropdownMenuItem(
                   value: TransactionType.buy,
-                  label: Text('買進'),
+                  child: Text('買進'),
                 ),
-                ButtonSegment(
+                DropdownMenuItem(
                   value: TransactionType.sell,
-                  label: Text('賣出'),
+                  child: Text('賣出'),
+                ),
+                DropdownMenuItem(
+                  value: TransactionType.stockDividend,
+                  child: Text('配股'),
+                ),
+                DropdownMenuItem(
+                  value: TransactionType.cashDividend,
+                  child: Text('配息'),
                 ),
               ],
-              selected: {_type},
-              onSelectionChanged: (Set<TransactionType> newSelection) {
-                setState(() {
-                  _type = newSelection.first;
-                  _errorMessage = null;
-                });
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() {
+                    _type = val;
+                    _errorMessage = null;
+                  });
+                }
               },
             ),
             const SizedBox(height: 16),
@@ -347,17 +445,22 @@ class _AddEditTransactionDialogState extends State<AddEditTransactionDialog> {
                 }
               },
             ),
-            TextField(
-              controller: _sharesController,
-              decoration: const InputDecoration(labelText: '股數'),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(
-              controller: _priceController,
-              decoration: const InputDecoration(labelText: '價格'),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-            ),
+            if (_type != TransactionType.cashDividend)
+              TextField(
+                controller: _sharesController,
+                decoration: const InputDecoration(labelText: '股數'),
+                keyboardType: TextInputType.number,
+              ),
+            if (_type != TransactionType.stockDividend)
+              TextField(
+                controller: _priceController,
+                decoration: InputDecoration(
+                  labelText:
+                      _type == TransactionType.cashDividend ? '總金額' : '價格',
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+              ),
             if (_errorMessage != null)
               Padding(
                 padding: const EdgeInsets.only(top: 16.0),

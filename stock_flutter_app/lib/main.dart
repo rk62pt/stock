@@ -1,7 +1,10 @@
+// Imports updated
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/stock_provider.dart';
+import 'providers/profit_loss_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/google_drive_service.dart';
 
 void main() {
   runApp(const MyApp());
@@ -15,6 +18,8 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => StockProvider()),
+        ChangeNotifierProvider(create: (_) => ProfitLossProvider()),
+        ChangeNotifierProvider(create: (_) => GoogleDriveService()..init()),
       ],
       child: MaterialApp(
         title: '台股即時看板',

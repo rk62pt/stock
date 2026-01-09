@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/stock_provider.dart';
 import '../services/stock_service.dart';
-import '../widgets/stock_card.dart';
+import '../widgets/stock_table.dart';
 import '../models/stock.dart';
 import 'settings_screen.dart';
+import 'profit_loss_report_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -146,6 +147,19 @@ class _HomeScreenState extends State<HomeScreen> {
                               _performSearch('');
                             },
                           ),
+                        // Report Icon
+                        IconButton(
+                          icon: const Icon(Icons.assessment_outlined),
+                          tooltip: '損益報表',
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const ProfitLossReportScreen()),
+                            );
+                          },
+                        ),
                         Padding(
                           padding: const EdgeInsets.only(right: 8.0),
                           child: InkWell(
@@ -173,6 +187,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+
+            // [NEW] Actions Row (Report Button)
+            // While we could put it in the search bar, it might be crowded.
+            // Or maybe a small icon button row below search or floating?
+            // User requested "navigation to the new report".
+            // Let's add it to the search bar row for now, or use the Settings approach.
+            // Let's add it NEXT to Settings in the Search Bar suffix.
+
+            // Wait, the previous search bar code had:
+            /*
+              suffixIcon: Row(
+                children: [
+                   if (clear) ...,
+                   SettingsIcon
+                ]
+              )
+            */
+            // I will inject the Report Icon before the Settings Icon.
 
             // Dashboard Summary
             const DashboardSummaryWidget(),
@@ -257,21 +289,13 @@ class _HomeScreenState extends State<HomeScreen> {
           Expanded(
             child: TabBarView(
               children: [
-                ListView.builder(
-                  padding: const EdgeInsets.only(top: 8, bottom: 80),
-                  itemCount: activeStocks.length,
-                  itemBuilder: (ctx, i) => StockCard(
-                    stock: activeStocks[i],
-                    onRemove: (s) => stockProvider.removeStock(s),
-                  ),
+                StockTable(
+                  stocks: activeStocks,
+                  onRemove: (s) => stockProvider.removeStock(s),
                 ),
-                ListView.builder(
-                  padding: const EdgeInsets.only(top: 8, bottom: 80),
-                  itemCount: settledStocks.length,
-                  itemBuilder: (ctx, i) => StockCard(
-                    stock: settledStocks[i],
-                    onRemove: (s) => stockProvider.removeStock(s),
-                  ),
+                StockTable(
+                  stocks: settledStocks,
+                  onRemove: (s) => stockProvider.removeStock(s),
                 ),
               ],
             ),
@@ -289,6 +313,8 @@ class DashboardSummaryWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     // Watch provider
     final provider = Provider.of<StockProvider>(context);
+    final totalMarketValue = provider.totalMarketValue;
+    final totalInventoryCost = provider.totalInventoryCost;
     final dailyPL = provider.totalDailyPL;
     final unrealizedPL = provider.totalUnrealizedPL;
     final realizedPL = provider.periodRealizedPL;
@@ -301,14 +327,29 @@ class DashboardSummaryWidget extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: Column(
               children: [
+                // Row 1: Totals
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildInfoColumn('當日損益', dailyPL, isCurrency: true),
-                    _buildInfoColumn('總未實現', unrealizedPL, isCurrency: true),
+                    _buildInfoColumn(context, '庫存總市值', totalMarketValue,
+                        isCurrency: true),
+                    _buildInfoColumn(context, '庫存總成本', totalInventoryCost,
+                        isCurrency: true),
                   ],
                 ),
                 const Divider(),
+                // Row 2: P/L
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildInfoColumn(context, '當日損益', dailyPL,
+                        isCurrency: true),
+                    _buildInfoColumn(context, '總未實現', unrealizedPL,
+                        isCurrency: true),
+                  ],
+                ),
+                const Divider(),
+                // Row 3: Realized & Filter
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -339,22 +380,57 @@ class DashboardSummaryWidget extends StatelessWidget {
                           color: realizedPL >= 0 ? Colors.red : Colors.green),
                     )
                   ],
+                ),
+                // Row 4: Advanced Options
+                const Divider(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: provider.includeFees,
+                          onChanged: (val) => provider.setSettings(fees: val),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        const Text("含手續費及稅金", style: TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                    const SizedBox(width: 8),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: provider.includeDividends,
+                          onChanged: (val) =>
+                              provider.setSettings(dividends: val),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        const Text("含配息", style: TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ],
                 )
               ],
             )));
   }
 
-  Widget _buildInfoColumn(String label, double val, {bool isCurrency = false}) {
-    final color = val > 0 ? Colors.red : (val < 0 ? Colors.green : Colors.grey);
+  Widget _buildInfoColumn(BuildContext context, String label, double val,
+      {bool isCurrency = false}) {
+    final themeColor = Theme.of(context).colorScheme.onSurface;
+    final color = val > 0 ? Colors.red : (val < 0 ? Colors.green : themeColor);
     final text = val.toStringAsFixed(0);
-    final sign = val > 0 ? '+' : '';
+    // Add sign only for P/L (logic: if label contains 損益 or 未實現)
+    final bool isPL = label.contains('損益') || label.contains('未實現');
+    final sign = (isPL && val > 0) ? '+' : '';
 
     return Column(
       children: [
         Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
         Text('$sign$text',
             style: TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: isPL ? color : themeColor)),
       ],
     );
   }

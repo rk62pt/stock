@@ -19,6 +19,11 @@ class StockProvider with ChangeNotifier {
   double _periodRealizedPL = 0;
   TimePeriod _selectedPeriod = TimePeriod.month;
 
+  // Advanced Settings
+  bool _includeFees = true;
+  bool _includeDividends = true;
+  double _brokerDiscount = 1.0; // 1.0 = No discount, 0.6 = 6 fold
+
   // Getters
   List<String> get watchlist => _watchlist;
   List<StockData> get stocks => _stocks;
@@ -29,15 +34,48 @@ class StockProvider with ChangeNotifier {
   TimePeriod get selectedPeriod => _selectedPeriod;
   double get periodRealizedPL => _periodRealizedPL;
 
+  bool get includeFees => _includeFees;
+  bool get includeDividends => _includeDividends;
+  double get brokerDiscount => _brokerDiscount;
+
   StockProvider() {
     _init();
   }
 
   Future<void> _init() async {
     await _loadApiKey();
+    await _loadSettings(); // Load settings first
     await _loadWatchlist();
+    await PortfolioService().loadTransactions(); // Load local data on startup
     await _refreshPortfolioMetrics(); // Load initial portfolio data
     _startPolling();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _includeFees = prefs.getBool('includeFees') ?? true;
+    _includeDividends = prefs.getBool('includeDividends') ?? true;
+    _brokerDiscount = prefs.getDouble('brokerDiscount') ?? 1.0;
+  }
+
+  Future<void> setSettings(
+      {bool? fees, bool? dividends, double? discount}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (fees != null) {
+      _includeFees = fees;
+      await prefs.setBool('includeFees', fees);
+    }
+    if (dividends != null) {
+      _includeDividends = dividends;
+      await prefs.setBool('includeDividends', dividends);
+    }
+    if (discount != null) {
+      _brokerDiscount = discount;
+      await prefs.setDouble('brokerDiscount', discount);
+    }
+    notifyListeners();
+    // Refresh metrics with new settings
+    await refreshMetrics();
   }
 
   Future<void> _loadApiKey() async {
@@ -147,7 +185,11 @@ class StockProvider with ChangeNotifier {
   // --- Metrics Logic ---
 
   Future<void> _refreshPortfolioMetrics() async {
-    _symbolMetrics = await PortfolioService().getAllPortfolioMetrics();
+    _symbolMetrics = await PortfolioService().getAllPortfolioMetrics(
+      includeFees: _includeFees,
+      includeDividends: _includeDividends,
+      brokerDiscount: _brokerDiscount,
+    );
     await _calculatePeriodRealizedPL();
     notifyListeners();
   }
@@ -184,7 +226,13 @@ class StockProvider with ChangeNotifier {
         break;
     }
 
-    _periodRealizedPL = await PortfolioService().getRealizedProfit(start, end);
+    _periodRealizedPL = await PortfolioService().getRealizedProfit(
+      start,
+      end,
+      includeFees: _includeFees,
+      includeDividends: _includeDividends,
+      brokerDiscount: _brokerDiscount,
+    );
   }
 
   // 1. Total Daily P/L (Only active stocks)
@@ -209,6 +257,30 @@ class StockProvider with ChangeNotifier {
         double marketValue = stock.regularMarketPrice * metrics.totalShares;
         double cost = metrics.avgCost * metrics.totalShares;
         total += (marketValue - cost);
+      }
+    }
+    return total;
+  }
+
+  // 3. Total Inventory Cost
+  double get totalInventoryCost {
+    double total = 0;
+    // Iterate metrics directly so we don't depend on fetched _stocks
+    for (var metrics in _symbolMetrics.values) {
+      if (metrics.totalShares > 0) {
+        total += metrics.avgCost * metrics.totalShares;
+      }
+    }
+    return total;
+  }
+
+  // 4. Total Market Value
+  double get totalMarketValue {
+    double total = 0;
+    for (var stock in _stocks) {
+      final metrics = _symbolMetrics[stock.symbol];
+      if (metrics != null && metrics.totalShares > 0) {
+        total += stock.regularMarketPrice * metrics.totalShares;
       }
     }
     return total;

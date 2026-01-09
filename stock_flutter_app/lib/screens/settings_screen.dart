@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import '../providers/stock_provider.dart';
 import '../services/stock_service.dart';
 import '../services/database_helper.dart';
+import 'package:google_sign_in/widgets.dart'; // For GoogleUserCircleAvatar
+import '../services/google_drive_service.dart';
+import '../services/portfolio_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -134,6 +137,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const Divider(height: 48),
+            // Transaction Settings
+            const Text(
+              '交易設定',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '設定券商手續費折數，用於計算損益 (範圍 0.1 ~ 10, 如 2.8 折請輸入 2.8)。',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            _buildBrokerDiscountInput(context),
+
+            const Divider(height: 48),
+            // Cloud Sync Section
+            const Text(
+              '雲端備份 (Google Drive)',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '將您的交易紀錄備份到 Google Drive 應用程式資料夾 (隱藏)。',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            _buildSyncSection(),
+
+            const Divider(height: 48),
             const Text(
               '股票資料庫',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -167,6 +198,218 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSyncSection() {
+    return Consumer<GoogleDriveService>(
+      builder: (context, driveService, child) {
+        if (!driveService.isSignedIn) {
+          return SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.login),
+              label: const Text('登入 Google Drive'),
+              onPressed: () async {
+                try {
+                  await driveService.signIn();
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('登入成功')));
+                } catch (e) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text('登入失敗: $e')));
+                }
+              },
+            ),
+          );
+        }
+
+        return Column(
+          children: [
+            ListTile(
+              leading:
+                  GoogleUserCircleAvatar(identity: driveService.currentUser!),
+              title: Text(driveService.currentUser!.displayName ?? ''),
+              subtitle: Text(driveService.currentUser!.email),
+              trailing: IconButton(
+                icon: const Icon(Icons.logout),
+                onPressed: () async {
+                  await driveService.signOut();
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('已登出')));
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.cloud_upload),
+                    label: const Text('立即備份'),
+                    onPressed: _isSyncing ? null : () => _backup(driveService),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.cloud_download),
+                    label: const Text('還原資料'),
+                    onPressed: _isSyncing ? null : () => _restore(driveService),
+                  ),
+                ),
+              ],
+            ),
+            FutureBuilder<DateTime?>(
+              future: driveService.getLastBackupTime(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.only(top: 8.0),
+                    child: Text('檢查備份中...',
+                        style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  );
+                }
+                if (snapshot.hasData && snapshot.data != null) {
+                  // Simple formatting
+                  final date = snapshot.data!.toLocal();
+                  return Padding(
+                    padding: EdgeInsets.only(top: 8.0),
+                    child: Text('上次備份: $date',
+                        style:
+                            const TextStyle(color: Colors.green, fontSize: 12)),
+                  );
+                }
+                return const Padding(
+                  padding: EdgeInsets.only(top: 8.0),
+                  child: Text('尚無雲端備份',
+                      style: TextStyle(color: Colors.orange, fontSize: 12)),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _backup(GoogleDriveService driveService) async {
+    setState(() => _isSyncing = true);
+    try {
+      final json = PortfolioService().exportData();
+      await driveService.uploadBackup(json);
+      // Refresh UI state (last backup time)
+      setState(() {});
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('備份成功')));
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('備份失敗: $e')));
+    } finally {
+      setState(() => _isSyncing = false);
+    }
+  }
+
+  Future<void> _restore(GoogleDriveService driveService) async {
+    // Confirm dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('確認還原'),
+        content: const Text('還原將會覆蓋本機目前的交易紀錄，確定要繼續嗎？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('確定還原', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isSyncing = true);
+    try {
+      final json = await driveService.downloadBackup();
+      if (json != null) {
+        await PortfolioService().importData(json);
+        if (mounted) {
+          // Force refresh provider
+          final provider = Provider.of<StockProvider>(context, listen: false);
+          await provider.refreshMetrics();
+          await provider.fetchStocks();
+
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('還原成功，請回到首頁查看')));
+        }
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('雲端無備份檔案')));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('還原失敗: $e')));
+    } finally {
+      setState(() => _isSyncing = false);
+    }
+  }
+
+  Widget _buildBrokerDiscountInput(BuildContext context) {
+    final provider = Provider.of<StockProvider>(context);
+    // Stored is multiplier (e.g. 0.28), display is X折 (e.g. 2.8)
+    // So Initial Text = multiplier * 10
+    double displayVal = provider.brokerDiscount * 10;
+    // Strip trailing zero if integer (e.g. 6.0 -> 6)
+    String textVal = displayVal.toStringAsFixed(2);
+    if (textVal.endsWith('00'))
+      textVal = textVal.substring(0, textVal.length - 3);
+    else if (textVal.endsWith('0'))
+      textVal = textVal.substring(0, textVal.length - 1);
+
+    final TextEditingController controller =
+        TextEditingController(text: textVal);
+
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: '手續費折數 (ex: 2.8)',
+                hintText: '2.8',
+                suffixText: '折'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+        ),
+        const SizedBox(width: 16),
+        ElevatedButton(
+          onPressed: () async {
+            final val = double.tryParse(controller.text);
+            if (val != null && val > 0 && val <= 10) {
+              // Input 2.8 -> 0.28 multiplier
+              double multiplier = val / 10.0;
+
+              await provider.setSettings(discount: multiplier); // Store 0.28
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('已儲存折數: $val 折 (倍率 $multiplier)')));
+              }
+            } else {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('請輸入有效折數 (0.1 ~ 10)')));
+              }
+            }
+          },
+          child: const Text('儲存'),
+        ),
+      ],
     );
   }
 }

@@ -43,12 +43,24 @@ class PortfolioService extends ChangeNotifier {
   }
 
   // Calculate detailed portfolio status with FIFO
-  Future<PortfolioMetrics> getPortfolioMetrics(String symbol) async {
-    // Ensure we have latest
-    // _transactions might be stale if we don't reload ?
-    // Usually loadTransactions is called at startup.
-    // Let's filter from memory for speed, assuming _transactions is kept in sync.
+  Future<PortfolioMetrics> getPortfolioMetrics(String symbol,
+      {bool includeFees = true,
+      bool includeDividends = true,
+      double brokerDiscount = 1.0}) async {
+    return _calculateMetrics(
+        symbol, includeFees, includeDividends, brokerDiscount);
+  }
 
+  PortfolioMetrics getPortfolioMetricsSync(String symbol,
+      {bool includeFees = true,
+      bool includeDividends = true,
+      double brokerDiscount = 1.0}) {
+    return _calculateMetrics(
+        symbol, includeFees, includeDividends, brokerDiscount);
+  }
+
+  PortfolioMetrics _calculateMetrics(String symbol, bool includeFees,
+      bool includeDividends, double brokerDiscount) {
     var symbolTransactions =
         _transactions.where((t) => t.symbol == symbol).toList();
     symbolTransactions.sort((a, b) => a.date.compareTo(b.date)); // Oldest first
@@ -59,10 +71,43 @@ class PortfolioService extends ChangeNotifier {
     List<TransactionWithPL> history = [];
 
     for (var t in symbolTransactions) {
-      if (t.type == TransactionType.buy) {
-        buyQueue.add(t); // Add to queue
+      // Calculate costs
+      double totalAmount = (t.shares * t.price).toDouble();
+
+      // Fee Rule: 0.1425% with broker discount, min 1 TWD
+      double fee = 0;
+      double tax = 0;
+
+      if (includeFees &&
+          (t.type == TransactionType.buy || t.type == TransactionType.sell)) {
+        double rawFee = (totalAmount * 0.001425 * brokerDiscount);
+        fee = rawFee < 1 ? 1 : rawFee.floorToDouble();
+      }
+
+      if (includeFees && t.type == TransactionType.sell) {
+        // Tax Rule: 0.3%
+        tax = (totalAmount * 0.003).floorToDouble();
+      }
+
+      // Effective Price per share adjustment
+      // Buy: Cost increases by fee
+      // Sell: Net proceeds decrease by fee and tax
+
+      if (t.type == TransactionType.buy ||
+          t.type == TransactionType.stockDividend) {
+        double effectiveCost = totalAmount + fee;
+        double effectivePrice = (t.shares > 0) ? effectiveCost / t.shares : 0;
+
+        // Use a modified transaction for queue that holds effective price
+        // Note: We don't modify the original 't' displayed in history,
+        // effectively we just track cost basis.
+        // We can just store 'effectivePrice' in the buyQueue item
+        // by creating a copy with modified price?
+        // Yes, this is safe as buyQueue items are only used for cost calculation.
+
+        buyQueue.add(t.copyWith(price: effectivePrice));
         history.add(TransactionWithPL(t, null));
-      } else {
+      } else if (t.type == TransactionType.sell) {
         // Sell
         int sharesToSell = t.shares;
         double costBasisForThisSell = 0;
@@ -72,15 +117,16 @@ class PortfolioService extends ChangeNotifier {
           var oldestBuy = buyQueue.first;
 
           if (oldestBuy.shares > sharesToSell) {
-            // Partial consumption of the buy lot
-            costBasisForThisSell += sharesToSell * oldestBuy.price;
+            // Partial consumption
+            costBasisForThisSell += sharesToSell *
+                oldestBuy.price; // oldestBuy.price includes buy fees
 
-            // Update the queue head with remaining shares (in memory only)
+            // Update the queue head
             buyQueue[0] =
                 oldestBuy.copyWith(shares: oldestBuy.shares - sharesToSell);
             sharesToSell = 0;
           } else {
-            // Full consumption of this buy lot
+            // Full consumption
             costBasisForThisSell += oldestBuy.shares * oldestBuy.price;
             sharesToSell -= oldestBuy.shares;
             buyQueue.removeAt(0);
@@ -88,16 +134,36 @@ class PortfolioService extends ChangeNotifier {
         }
 
         // Realized P/L calculation
-        // actuallySold is what we found matching buys for.
-        // If sharesToSell > 0 remaining, it means we oversold (short). Cost basis 0 for that part?
         int actuallySold = t.shares - sharesToSell;
         double realized = 0;
         if (actuallySold > 0) {
-          realized = (actuallySold * t.price) - costBasisForThisSell;
+          // Proceeds = (Shares * Price) - Fees - Tax
+          // Since we calculated 'fee' and 'tax' based on the TOTAL shares of this transaction,
+          // if we only partially sold (actuallySold < t.shares), we must prorate the sell costs.
+          // However, for standard FIFO logic in this app, we assume we sold all if possible?
+          // Wait, 'sharesToSell > 0' means we ran out of inventory (oversold/short).
+          // If we are shorting, the cost basis is 0? Or negative?
+          // Current logic: ignore p/l for short portion (cost basis 0 for that part?)
+          // Let's assume valid inventory.
+
+          double portion = actuallySold / t.shares;
+          double sellProceeds =
+              (actuallySold * t.price) - (fee * portion) - (tax * portion);
+
+          realized = sellProceeds - costBasisForThisSell;
         }
 
         totalRealizedProfit += realized;
         history.add(TransactionWithPL(t, realized));
+      } else if (t.type == TransactionType.cashDividend) {
+        // If including dividends, add to total PL
+        if (includeDividends) {
+          totalRealizedProfit += t.price;
+        }
+        // Still show in history with PL value equivalent to amount if included, or just amount?
+        // UI expects 'realizedPL' to show "Profit". For div, it is purely profit.
+        history.add(TransactionWithPL(
+            t, includeDividends ? t.price : 0)); // 0 or price?
       }
     }
 
@@ -106,75 +172,10 @@ class PortfolioService extends ChangeNotifier {
     double totalCostVector = 0;
     for (var b in buyQueue) {
       totalShares += b.shares;
-      totalCostVector += b.shares * b.price;
+      totalCostVector += b.shares * b.price; // This price includes buy fees
     }
     double avgCost = totalShares > 0 ? totalCostVector / totalShares : 0;
-
-    return PortfolioMetrics(
-      totalShares: totalShares,
-      avgCost: avgCost,
-      totalRealizedProfit: totalRealizedProfit,
-      history: history,
-    );
-  }
-
-  // Backward compatibility wrapper (but now async! UI needs update)
-  // Actually the original was synchronous but that was wrong for DB access anyway,
-  // though existing code filtered from memory.
-  // We can keep it synchronous IF we use the memory cache, but `getPortfolioMetrics` logic is complex enough
-  // that we might want to just call it. But to avoid breaking call sites immediately,
-  // let's try to keep it synchronous if possible OR return a Future.
-  // The existing call site `StockCard` calls `PortfolioService().getHoldings(widget.stock.symbol)`.
-  // It assigns it to a Map.
-  // I will change StockCard to handle Future or just make this sync using _transactions.
-  // Since _transactions is in memory, we can make `getPortfolioMetrics` synchronous!
-
-  PortfolioMetrics getPortfolioMetricsSync(String symbol) {
-    var symbolTransactions =
-        _transactions.where((t) => t.symbol == symbol).toList();
-    symbolTransactions.sort((a, b) => a.date.compareTo(b.date));
-
-    List<Transaction> buyQueue = [];
-    double totalRealizedProfit = 0;
-    List<TransactionWithPL> history = [];
-
-    for (var t in symbolTransactions) {
-      if (t.type == TransactionType.buy) {
-        buyQueue.add(t);
-        history.add(TransactionWithPL(t, null));
-      } else {
-        int sharesToSell = t.shares;
-        double costBasis = 0;
-        while (sharesToSell > 0 && buyQueue.isNotEmpty) {
-          var oldestBuy = buyQueue.first;
-          if (oldestBuy.shares > sharesToSell) {
-            costBasis += sharesToSell * oldestBuy.price;
-            buyQueue[0] =
-                oldestBuy.copyWith(shares: oldestBuy.shares - sharesToSell);
-            sharesToSell = 0;
-          } else {
-            costBasis += oldestBuy.shares * oldestBuy.price;
-            sharesToSell -= oldestBuy.shares;
-            buyQueue.removeAt(0);
-          }
-        }
-        int actuallySold = t.shares - sharesToSell;
-        double realized = 0;
-        if (actuallySold > 0) {
-          realized = (actuallySold * t.price) - costBasis;
-        }
-        totalRealizedProfit += realized;
-        history.add(TransactionWithPL(t, realized));
-      }
-    }
-
-    int totalShares = 0;
-    double totalCost = 0;
-    for (var b in buyQueue) {
-      totalShares += b.shares;
-      totalCost += b.shares * b.price;
-    }
-    double avgCost = totalShares > 0 ? totalCost / totalShares : 0;
+    // AvgCost here includes buy fees. This is standard "Break Even Price" (roughly).
 
     return PortfolioMetrics(
       totalShares: totalShares,
@@ -185,7 +186,32 @@ class PortfolioService extends ChangeNotifier {
   }
 
   Map<String, dynamic> getHoldings(String symbol) {
+    // Accessing provider to get settings? NO, service ignores provider.
+    // The caller (StockCard) should pass settings or we use defaults?
+    // Since StockCard calls this, and StockCard has access to Provider...
+    // But StockCard currently calls this directly without params.
+    // We'll update StockCard later. For now use defaults (fees=true, div=true, disc=1.0)
+    // Wait, user wants global settings to apply.
+    // If we don't pass them, they are defaults.
+    // We must update StockCard to pass them.
+
     final metrics = getPortfolioMetricsSync(symbol);
+    return {
+      'totalShares': metrics.totalShares,
+      'avgCost': metrics.avgCost,
+      'totalRealizedProfit': metrics.totalRealizedProfit,
+    };
+  }
+
+  // Overload for StockCard usage with specific settings
+  Map<String, dynamic> getHoldingsWithSettings(String symbol,
+      {bool includeFees = true,
+      bool includeDividends = true,
+      double brokerDiscount = 1.0}) {
+    final metrics = getPortfolioMetricsSync(symbol,
+        includeFees: includeFees,
+        includeDividends: includeDividends,
+        brokerDiscount: brokerDiscount);
     return {
       'totalShares': metrics.totalShares,
       'avgCost': metrics.avgCost,
@@ -195,8 +221,6 @@ class PortfolioService extends ChangeNotifier {
 
   Future<void> updateTransaction(Transaction t) async {
     await DatabaseHelper().updateTransaction(t);
-    // Reload local list efficiently? Or just re-fetch all?
-    // Replace in memory
     final index = _transactions.indexWhere((x) => x.id == t.id);
     if (index != -1) {
       _transactions[index] = t;
@@ -206,36 +230,94 @@ class PortfolioService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Get metrics for ALL symbols (used for dashboard and separating lists)
-  Future<Map<String, PortfolioMetrics>> getAllPortfolioMetrics() async {
-    // 1. Get all unique symbols from transactions
+  Future<Map<String, PortfolioMetrics>> getAllPortfolioMetrics(
+      {bool includeFees = true,
+      bool includeDividends = true,
+      double brokerDiscount = 1.0}) async {
     final allTx = _transactions;
     final symbols = allTx.map((t) => t.symbol).toSet();
-
     final Map<String, PortfolioMetrics> results = {};
-
-    // 2. Compute metrics for each
     for (var symbol in symbols) {
-      results[symbol] = await getPortfolioMetrics(symbol);
+      results[symbol] = await getPortfolioMetrics(symbol,
+          includeFees: includeFees,
+          includeDividends: includeDividends,
+          brokerDiscount: brokerDiscount);
     }
-
     return results;
   }
 
-  // Calculate total realized profit within a date range across all stocks
-  Future<double> getRealizedProfit(DateTime start, DateTime end) async {
-    final allMetrics = await getAllPortfolioMetrics();
+  String exportData() {
+    final data = {
+      'transactions': _transactions.map((t) => t.toJson()).toList(),
+      'version': 1,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    return jsonEncode(data);
+  }
+
+  Future<void> importData(String jsonString) async {
+    try {
+      final data = jsonDecode(jsonString) as Map<String, dynamic>;
+
+      final List<dynamic> txList = data['transactions'] ?? [];
+      final newTransactions =
+          txList.map((x) => Transaction.fromJson(x)).toList();
+
+      // Clear DB - this is inefficient but safe for small data.
+      // Optimized way: DatabaseHelper().clearAllTransactions()
+      for (var t in _transactions) {
+        await removeTransaction(t.id);
+      }
+
+      // Insert new
+      for (var t in newTransactions) {
+        await addTransaction(t);
+      }
+
+      await loadTransactions();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Import failed: $e');
+      }
+      rethrow;
+    }
+  }
+
+// ...
+  Future<double> getRealizedProfit(DateTime start, DateTime end,
+      {bool includeFees = true,
+      bool includeDividends = true,
+      double brokerDiscount = 1.0}) async {
+    final allMetrics = await getAllPortfolioMetrics(
+        includeFees: includeFees,
+        includeDividends: includeDividends,
+        brokerDiscount: brokerDiscount);
     double total = 0;
 
     for (var metrics in allMetrics.values) {
       for (var item in metrics.history) {
+        // Sell
         if (item.transaction.type == TransactionType.sell &&
             item.realizedPL != null) {
           final date = item.transaction.date;
-          // Check range (Inclusive)
           if (date.isAfter(start.subtract(const Duration(seconds: 1))) &&
               date.isBefore(end.add(const Duration(seconds: 1)))) {
             total += item.realizedPL!;
+          }
+        }
+        // Dividend - Check if it should be included in P/L report range
+        // If includeDividends is false, their realizedPL in history is 0 (as set in calculation),
+        // but we should verify the range too.
+        if (item.transaction.type == TransactionType.cashDividend) {
+          final date = item.transaction.date;
+          if (date.isAfter(start.subtract(const Duration(seconds: 1))) &&
+              date.isBefore(end.add(const Duration(seconds: 1)))) {
+            // If includeDividends was false, realizedPL is 0 or null?
+            // In calculation above: history.add(TransactionWithPL(t, includeDividends ? t.price : 0));
+            // So adding item.realizedPL is safe (0 if disabled).
+            if (item.realizedPL != null) {
+              total += item.realizedPL!;
+            }
           }
         }
       }

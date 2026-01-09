@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/stock.dart';
 import '../services/portfolio_service.dart';
+import 'package:provider/provider.dart';
+import '../providers/stock_provider.dart';
 import 'transaction_history_dialog.dart';
 
 class StockCard extends StatefulWidget {
@@ -39,11 +41,44 @@ class _StockCardState extends State<StockCard> {
     // Open History Dialog instead of direct Add Dialog
     await showDialog(
       context: context,
-      builder: (ctx) => TransactionHistoryDialog(symbol: widget.stock.symbol),
+      builder: (ctx) => TransactionHistoryDialog(
+        symbol: widget.stock.symbol,
+        stockName: widget.stock.shortName ?? widget.stock.longName,
+      ),
     );
 
     // Refresh card stats after closing history (in case transactions were added/deleted)
     _loadHoldings();
+
+    // Refresh global provider state (e.g. to move stock between active/settled lists)
+    if (mounted) {
+      Provider.of<StockProvider>(context, listen: false).refreshMetrics();
+    }
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('確認刪除'),
+        content: Text(
+            '確定要刪除 ${widget.stock.symbol} ${widget.stock.shortName ?? ''} 嗎？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              widget.onRemove(widget.stock.symbol);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('刪除'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -125,7 +160,7 @@ class _StockCardState extends State<StockCard> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.close, size: 20),
-                      onPressed: () => widget.onRemove(stock.symbol),
+                      onPressed: () => _showDeleteConfirmation(context),
                       color: Colors.grey,
                     ),
                   ],
