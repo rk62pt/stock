@@ -5,6 +5,7 @@ import '../services/stock_service.dart';
 import '../services/database_helper.dart';
 import 'package:google_sign_in/widgets.dart'; // For GoogleUserCircleAvatar
 import '../services/google_drive_service.dart';
+import 'package:googleapis/drive/v3.dart' as drive;
 import '../services/portfolio_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -312,30 +313,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _restore(GoogleDriveService driveService) async {
-    // Confirm dialog
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('確認還原'),
-        content: const Text('還原將會覆蓋本機目前的交易紀錄，確定要繼續嗎？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('確定還原', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
     setState(() => _isSyncing = true);
+    
     try {
-      final json = await driveService.downloadBackup();
+      // 1. Fetch list of backups
+      final backups = await driveService.listBackups();
+      
+      if (backups.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('雲端無備份資料')));
+        }
+        return;
+      }
+
+      setState(() => _isSyncing = false); // Pause spinner to show dialog
+
+      if (!mounted) return;
+
+      // 2. Show selection dialog
+      final drive.File? selectedFile = await showDialog<drive.File>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('選擇要還原的備份'),
+          children: backups.map((file) {
+            String dateStr = 'Unknown Date';
+            if (file.createdTime != null) {
+              dateStr = file.createdTime!.toLocal().toString().split('.')[0];
+            }
+            return SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, file),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(dateStr, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text(file.name ?? 'Unknown', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      );
+
+      if (selectedFile == null || selectedFile.id == null) return;
+
+      // 3. Confirm overwrite
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('確認還原'),
+          content: Text('將使用備份 (${selectedFile.createdTime?.toLocal().toString().split('.')[0]})\n還原將會覆蓋本機目前的交易紀錄，確定要繼續嗎？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('確定還原', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm != true) return;
+
+      setState(() => _isSyncing = true);
+
+      // 4. Download and Import
+      final json = await driveService.downloadBackup(selectedFile.id!);
       if (json != null) {
         await PortfolioService().importData(json);
         if (mounted) {
@@ -348,14 +397,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               .showSnackBar(const SnackBar(content: Text('還原成功，請回到首頁查看')));
         }
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('雲端無備份檔案')));
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('下載失敗或是空檔案')));
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('還原失敗: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('還原失敗: $e')));
+      }
     } finally {
-      setState(() => _isSyncing = false);
+      if (mounted) {
+        setState(() => _isSyncing = false);
+      }
     }
   }
 

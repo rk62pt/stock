@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import 'package:provider/provider.dart';
+import '../models/stock.dart';
 import '../models/transaction.dart';
+import '../providers/stock_provider.dart';
 import '../services/portfolio_service.dart';
 
 class TransactionHistoryDialog extends StatefulWidget {
@@ -68,6 +71,26 @@ class _TransactionHistoryDialogState extends State<TransactionHistoryDialog> {
     displayList
         .sort((a, b) => b.transaction.date.compareTo(a.transaction.date));
 
+    // Get current price from provider
+    final provider = Provider.of<StockProvider>(context);
+    final stock = provider.stocks.firstWhere(
+      (s) => s.symbol == widget.symbol,
+      orElse: () => StockData(
+        symbol: widget.symbol,
+        regularMarketPrice: 0,
+        regularMarketChange: 0,
+        regularMarketChangePercent: 0,
+      ),
+    );
+    final currentPrice = stock.regularMarketPrice;
+    final marketValue = _metrics.totalShares * currentPrice;
+    final totalCost = _metrics.totalShares * _metrics.avgCost;
+    final unrealizedProfit = marketValue - totalCost;
+    double returnPercent = 0.0;
+    if (totalCost > 0) {
+      returnPercent = (unrealizedProfit / totalCost) * 100;
+    }
+
     return AlertDialog(
       insetPadding:
           const EdgeInsets.symmetric(horizontal: 10.0, vertical: 24.0),
@@ -79,19 +102,47 @@ class _TransactionHistoryDialogState extends State<TransactionHistoryDialog> {
           children: [
             Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+              child: Column(
                 children: [
-                  _buildSummaryItem('目前持股', '${_metrics.totalShares}'),
-                  _buildSummaryItem('均價', _metrics.avgCost.toStringAsFixed(2)),
-                  _buildSummaryItem(
-                      '已實現', _metrics.totalRealizedProfit.toStringAsFixed(0),
-                      color: _metrics.totalRealizedProfit >= 0
-                          ? Colors.red
-                          : Colors.green),
+                  // Row 1: Holdings & Avg Cost
+                  Row(
+                    children: [
+                      Expanded(child: _buildSummaryItem('目前持股', '${_metrics.totalShares}')),
+                      Expanded(child: _buildSummaryItem('均價', _metrics.avgCost.toStringAsFixed(2))),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Row 2: Market Value & Total Cost
+                  Row(
+                    children: [
+                      Expanded(child: _buildSummaryItem('市值', NumberFormat("#,##0").format(marketValue), color: Colors.black)),
+                      Expanded(child: _buildSummaryItem('總成本', NumberFormat("#,##0").format(totalCost), color: Colors.grey)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Row 3: Unrealized & Realized P/L
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildSummaryItem(
+                          '未實現損益',
+                          '${unrealizedProfit > 0 ? '+' : ''}${NumberFormat("#,##0").format(unrealizedProfit)}\n(${returnPercent > 0 ? '+' : ''}${returnPercent.toStringAsFixed(2)}%)',
+                          color: unrealizedProfit >= 0 ? Colors.red : Colors.green,
+                        ),
+                      ),
+                      Expanded(
+                        child: _buildSummaryItem(
+                          '已實現損益',
+                          _metrics.totalRealizedProfit.toStringAsFixed(0),
+                          color: _metrics.totalRealizedProfit >= 0 ? Colors.red : Colors.green,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
+            const Divider(),
             const Divider(),
             Expanded(
               child: ListView.builder(

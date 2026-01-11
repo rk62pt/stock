@@ -57,6 +57,8 @@ class _StockTableState extends State<StockTable> {
         changePercent: stock.regularMarketChangePercent,
         profitLoss: profitLoss,
         profitLossPercent: profitLossPercent,
+        marketValue: shares > 0 ? (shares * marketPrice) : 0,
+        totalCost: shares > 0 ? (shares * avgCost) : 0,
       );
     }).toList();
 
@@ -73,10 +75,13 @@ class _StockTableState extends State<StockTable> {
         case 2: // Price/Cost -> Sort by Price
           cmp = a.marketPrice.compareTo(b.marketPrice);
           break;
-        case 3: // Change/Change% -> Sort by Change Amount
+        case 3: // MarketValue/TotalCost -> Sort by Market Value
+          cmp = a.marketValue.compareTo(b.marketValue);
+          break;
+        case 4: // Change/Change% -> Sort by Change Amount
           cmp = a.change.compareTo(b.change);
           break;
-        case 4: // P/L / P/L% -> Sort by P/L Amount
+        case 5: // P/L / P/L% -> Sort by P/L Amount
           cmp = a.profitLoss.compareTo(b.profitLoss);
           break;
       }
@@ -99,8 +104,9 @@ class _StockTableState extends State<StockTable> {
             _buildColumn('股號', 0),
             _buildColumn('持股', 1, numeric: true),
             _buildColumn('現價\n均價', 2, numeric: true), // Multiline header
-            _buildColumn('漲跌\n幅度', 3, numeric: true),
-            _buildColumn('損益\n報酬', 4, numeric: true),
+            _buildColumn('市值\n成本', 3, numeric: true),
+            _buildColumn('漲跌\n幅度', 4, numeric: true),
+            _buildColumn('損益\n報酬', 5, numeric: true),
             const DataColumn(label: Text('')), // Actions
           ],
           rows: rowDataList.map((data) => _buildRow(context, data)).toList(),
@@ -173,6 +179,23 @@ class _StockTableState extends State<StockTable> {
               ),
               Text(
                 data.avgCost.toStringAsFixed(2),
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+        // Market Value / Cost
+        DataCell(
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                intFormat.format(data.marketValue),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                intFormat.format(data.totalCost),
                 style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],
@@ -273,6 +296,8 @@ class _StockRowData {
   final double changePercent;
   final double profitLoss;
   final double profitLossPercent;
+  final double marketValue;
+  final double totalCost;
 
   _StockRowData({
     required this.stock,
@@ -283,5 +308,7 @@ class _StockRowData {
     required this.changePercent,
     required this.profitLoss,
     required this.profitLossPercent,
+    required this.marketValue,
+    required this.totalCost,
   });
 }

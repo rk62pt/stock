@@ -265,8 +265,10 @@ class PortfolioService extends ChangeNotifier {
 
       // Clear DB - this is inefficient but safe for small data.
       // Optimized way: DatabaseHelper().clearAllTransactions()
-      for (var t in _transactions) {
-        await removeTransaction(t.id);
+      // Clear DB - create a copy of the list to iterate or use clearAll
+      final currentIds = _transactions.map((t) => t.id).toList();
+      for (var id in currentIds) {
+        await removeTransaction(id);
       }
 
       // Insert new

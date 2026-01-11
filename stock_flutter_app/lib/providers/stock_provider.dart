@@ -11,7 +11,6 @@ class StockProvider with ChangeNotifier {
   List<StockData> _stocks = [];
   bool _isLoading = false;
   String? _error;
-  Timer? _timer;
   String _apiKey = '';
 
   // Dashboard Metrics State
@@ -48,7 +47,30 @@ class StockProvider with ChangeNotifier {
     await _loadWatchlist();
     await PortfolioService().loadTransactions(); // Load local data on startup
     await _refreshPortfolioMetrics(); // Load initial portfolio data
-    _startPolling();
+    await _refreshPortfolioMetrics(); // Load initial portfolio data
+    await _loadCachedPrices(); // Load cached prices for immediate UI
+  }
+
+  Future<void> _loadCachedPrices() async {
+    try {
+      final cachedMaps = await DatabaseHelper().getLatestStockPrices();
+      if (cachedMaps.isNotEmpty) {
+        // Parse and sort by watchlist if needed, or just display ALL cached?
+        // Let's filter by watchlist to stay consistent.
+        final allCached = cachedMaps.map((m) => StockData.fromJson(m)).toList();
+        final map = {for (var s in allCached) s.symbol: s};
+        
+        _stocks = _watchlist
+          .map((symbol) => map[symbol])
+          .where((s) => s != null)
+          .cast<StockData>()
+          .toList();
+        
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error loading cached prices: $e');
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -145,11 +167,29 @@ class StockProvider with ChangeNotifier {
       final stockMap = {for (var s in stocks) s.symbol: s};
 
       // Rebuild list based on watchlist order, filtering out any missing ones
+      // Rebuild list based on watchlist order, filtering out any missing ones
       _stocks = _watchlist
           .map((symbol) => stockMap[symbol])
           .where((s) => s != null)
           .cast<StockData>()
           .toList();
+
+      // Save to DB
+      // We convert StockData to Map for the helper
+      // StockData doesn't have toJson currently based on view (only fromJson).
+      // We'll create a quick helper or add toJson to model.
+      // Or just map it here.
+      final List<Map<String, dynamic>> toSave = _stocks.map((s) {
+        return {
+          'symbol': s.symbol,
+          'regularMarketPrice': s.regularMarketPrice,
+          'regularMarketChange': s.regularMarketChange,
+          'regularMarketChangePercent': s.regularMarketChangePercent,
+          'shortName': s.shortName,
+          'longName': s.longName,
+        };
+      }).toList();
+      await DatabaseHelper().upsertStockPrices(toSave);
     } catch (e) {
       _error = '無法取得股價資訊';
       print(e);
@@ -159,13 +199,7 @@ class StockProvider with ChangeNotifier {
     }
   }
 
-  void _startPolling() {
-    // Fetch immediately then periodic
-    fetchStocks();
-    _timer = Timer.periodic(const Duration(seconds: 65), (timer) {
-      fetchStocks();
-    });
-  }
+
 
   Future<void> addStock(String symbol) async {
     if (!_watchlist.contains(symbol)) {
@@ -299,7 +333,6 @@ class StockProvider with ChangeNotifier {
 
   @override
   void dispose() {
-    _timer?.cancel();
     super.dispose();
   }
 }

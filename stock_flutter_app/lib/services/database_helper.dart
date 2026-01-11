@@ -21,11 +21,12 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await _createTransactionsTable(db);
         await _createSettingsTable(db);
         await _createStockSymbolsTable(db);
+        await _createStockPricesTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -33,6 +34,9 @@ class DatabaseHelper {
         }
         if (oldVersion < 3) {
           await _createStockSymbolsTable(db);
+        }
+        if (oldVersion < 4) {
+          await _createStockPricesTable(db);
         }
       },
     );
@@ -66,6 +70,20 @@ class DatabaseHelper {
         symbol TEXT PRIMARY KEY,
         name TEXT,
         type TEXT
+      )
+    ''');
+  }
+
+  Future<void> _createStockPricesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE latest_stock_prices(
+        symbol TEXT PRIMARY KEY,
+        regularMarketPrice REAL,
+        regularMarketChange REAL,
+        regularMarketChangePercent REAL,
+        shortName TEXT,
+        longName TEXT,
+        lastUpdated INTEGER
       )
     ''');
   }
@@ -180,5 +198,34 @@ class DatabaseHelper {
     // Use rawQuery for count
     final x = await db.rawQuery('SELECT COUNT(*) FROM stock_symbols');
     return Sqflite.firstIntValue(x) ?? 0;
+  }
+
+  // --- Latest Stock Prices Methods ---
+
+  Future<void> upsertStockPrices(List<dynamic> stocks) async {
+    // Accepts List<StockData>, using dynamic to avoid circular dependency if possible,
+    // but better to import model. We already import 'transaction.dart' as model.
+    // We should probably import stock.dart in this file or pass Maps.
+    // Let's assume the caller converts to Map or we cast.
+    // Actually, let's just take List<Map<String, dynamic>> to be safe and clean.
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (var s in stocks) {
+        // s can be StockData object. Let's make the signature accept list of Maps.
+        // Caller (Provider) will convert StockData to Map.
+        Map<String, dynamic> data = s; 
+        data['lastUpdated'] = now;
+        batch.insert('latest_stock_prices', data,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getLatestStockPrices() async {
+    final db = await database;
+    return await db.query('latest_stock_prices');
   }
 }

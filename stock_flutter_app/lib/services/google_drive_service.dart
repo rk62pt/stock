@@ -58,73 +58,92 @@ class GoogleDriveService extends ChangeNotifier {
 
   // --- Drive Operations ---
 
-  final String _backupFileName = 'stock_app_backup.json';
+  // No fixed filename anymore
+  // final String _backupFileName = 'stock_app_backup.json';
 
-  Future<drive.File?> _findBackupFile() async {
-    if (_driveApi == null) return null;
+  Future<List<drive.File>> listBackups() async {
+    if (_driveApi == null) return [];
 
     try {
       final fileList = await _driveApi!.files.list(
         spaces: 'appDataFolder',
-        q: "name = '$_backupFileName'",
-        $fields: 'files(id, name, createdTime, modifiedTime)',
+        q: "name contains 'stock_backup_'",
+        orderBy: 'createdTime desc', // Newest first
+        $fields: 'files(id, name, createdTime, modifiedTime, size)',
       );
 
-      if (fileList.files != null && fileList.files!.isNotEmpty) {
-        return fileList.files!.first;
-      }
-      return null;
+      return fileList.files ?? [];
     } catch (e) {
       if (kDebugMode) {
-        print('Error finding backup file: $e');
+        print('Error listing backup files: $e');
       }
-      return null;
+      return [];
     }
   }
 
+  // Helper to find the latest
+  Future<drive.File?> _findLatestBackup() async {
+    final list = await listBackups();
+    if (list.isNotEmpty) return list.first;
+    return null;
+  }
+
   Future<DateTime?> getLastBackupTime() async {
-    final file = await _findBackupFile();
-    return file?.modifiedTime;
+    final file = await _findLatestBackup();
+    return file?.createdTime; // Use createdTime for rotating backups
   }
 
   Future<void> uploadBackup(String jsonContent) async {
     if (_driveApi == null) throw Exception('Not signed in');
 
-    final existingFile = await _findBackupFile();
+    // 1. Create NEW file with timestamp
+    // Format: stock_backup_YYYYMMDD_HHMMSS.json
+    final now = DateTime.now();
+    final timestamp =
+        "${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}";
+    final fileName = 'stock_backup_$timestamp.json';
 
     final uploadMedia = drive.Media(
       Future.value(utf8.encode(jsonContent)).asStream(),
       utf8.encode(jsonContent).length,
     );
 
-    if (existingFile != null) {
-      // Update existing
-      await _driveApi!.files.update(
-        drive.File(),
-        existingFile.id!,
-        uploadMedia: uploadMedia,
-      );
-    } else {
-      // Create new
-      final newFile = drive.File()
-        ..name = _backupFileName
-        ..parents = ['appDataFolder'];
+    final newFile = drive.File()
+      ..name = fileName
+      ..parents = ['appDataFolder'];
 
-      await _driveApi!.files.create(
-        newFile,
-        uploadMedia: uploadMedia,
-      );
+    await _driveApi!.files.create(
+      newFile,
+      uploadMedia: uploadMedia,
+    );
+
+    // 2. Prune old backups (Keep latest 10)
+    await _pruneOldBackups();
+  }
+
+  Future<void> _pruneOldBackups() async {
+    final list = await listBackups(); // Sorted by createdTime desc
+    if (list.length > 10) {
+      // Delete from 11th onwards
+      final toDelete = list.sublist(10);
+      for (var file in toDelete) {
+        try {
+          if (file.id != null) {
+            print('Pruning old backup: ${file.name}');
+            await _driveApi!.files.delete(file.id!);
+          }
+        } catch (e) {
+          print('Error pruning file ${file.id}: $e');
+        }
+      }
     }
   }
 
-  Future<String?> downloadBackup() async {
+  Future<String?> downloadBackup(String fileId) async {
     if (_driveApi == null) throw Exception('Not signed in');
 
-    final existingFile = await _findBackupFile();
-    if (existingFile == null) return null; // No backup found
-
     final method = await _driveApi!.files.get(
-      existingFile.id!,
+      fileId,
       downloadOptions: drive.DownloadOptions.fullMedia,
     ) as drive.Media;
 
