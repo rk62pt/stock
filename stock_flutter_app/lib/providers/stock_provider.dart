@@ -59,13 +59,13 @@ class StockProvider with ChangeNotifier {
         // Let's filter by watchlist to stay consistent.
         final allCached = cachedMaps.map((m) => StockData.fromJson(m)).toList();
         final map = {for (var s in allCached) s.symbol: s};
-        
+
         _stocks = _watchlist
-          .map((symbol) => map[symbol])
-          .where((s) => s != null)
-          .cast<StockData>()
-          .toList();
-        
+            .map((symbol) => map[symbol])
+            .where((s) => s != null)
+            .cast<StockData>()
+            .toList();
+
         notifyListeners();
       }
     } catch (e) {
@@ -199,11 +199,23 @@ class StockProvider with ChangeNotifier {
     }
   }
 
-
-
   Future<void> addStock(String symbol) async {
     if (!_watchlist.contains(symbol)) {
       _watchlist.add(symbol);
+      await _saveWatchlist();
+      await fetchStocks();
+    }
+  }
+
+  Future<void> addStocks(List<String> symbols) async {
+    bool changed = false;
+    for (var symbol in symbols) {
+      if (!_watchlist.contains(symbol)) {
+        _watchlist.add(symbol);
+        changed = true;
+      }
+    }
+    if (changed) {
       await _saveWatchlist();
       await fetchStocks();
     }

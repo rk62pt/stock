@@ -9,28 +9,6 @@ if (Test-Path $flutterPath) {
     Pop-Location
 }
 
-# 2. Clean Next.js App (stock-app)
-$nodeAppPath = ".\stock-app"
-if (Test-Path $nodeAppPath) {
-    Write-Host "Cleaning Node.js project (stock-app)..."
-    if (Test-Path "$nodeAppPath\node_modules") {
-        Remove-Item "$nodeAppPath\node_modules" -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Removed node_modules."
-    }
-    if (Test-Path "$nodeAppPath\.next") {
-        Remove-Item "$nodeAppPath\.next" -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Removed .next build folder."
-    }
-}
-
-# 3. Clean stock-mobile (if applicable)
-$mobileAppPath = ".\stock-mobile"
-if (Test-Path $mobileAppPath) {
-    if (Test-Path "$mobileAppPath\node_modules") {
-        Write-Host "Cleaning stock-mobile..."
-        Remove-Item "$mobileAppPath\node_modules" -Recurse -Force -ErrorAction SilentlyContinue
-    }
-}
 
 Write-Host "Cleanup complete!"
 Write-Host "You can now zip the 'Stock' folder and upload it to Google Drive."

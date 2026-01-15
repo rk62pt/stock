@@ -7,6 +7,10 @@ import 'package:google_sign_in/widgets.dart'; // For GoogleUserCircleAvatar
 import '../services/google_drive_service.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import '../services/portfolio_service.dart';
+import 'dart:io';
+import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -166,6 +170,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildSyncSection(),
 
             const Divider(height: 48),
+            // Local Backup Section
+            const Text(
+              '本機備份 (JSON)',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '匯出或匯入交易紀錄 (JSON 格式)，可用於不同裝置間轉移或是手動備份。',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            _buildLocalBackupSection(context),
+
+            const Divider(height: 48),
             const Text(
               '股票資料庫',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -196,6 +214,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: _isSyncing ? null : _syncStocks,
               ),
             ),
+            const SizedBox(height: 80), // Prevent bottom clipping
           ],
         ),
       ),
@@ -314,11 +333,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _restore(GoogleDriveService driveService) async {
     setState(() => _isSyncing = true);
-    
+
     try {
       // 1. Fetch list of backups
       final backups = await driveService.listBackups();
-      
+
       if (backups.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context)
@@ -348,8 +367,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(dateStr, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    Text(file.name ?? 'Unknown', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text(dateStr,
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text(file.name ?? 'Unknown',
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
                 ),
               ),
@@ -365,7 +387,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('確認還原'),
-          content: Text('將使用備份 (${selectedFile.createdTime?.toLocal().toString().split('.')[0]})\n還原將會覆蓋本機目前的交易紀錄，確定要繼續嗎？'),
+          content: Text(
+              '將使用備份 (${selectedFile.createdTime?.toLocal().toString().split('.')[0]})\n還原將會覆蓋本機目前的交易紀錄，確定要繼續嗎？'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -390,6 +413,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) {
           // Force refresh provider
           final provider = Provider.of<StockProvider>(context, listen: false);
+
+          // Sync watchlist with restored transactions
+          final allSymbols =
+              PortfolioService().transactions.map((t) => t.symbol).toList();
+          await provider.addStocks(allSymbols);
+
           await provider.refreshMetrics();
           await provider.fetchStocks();
 
@@ -466,5 +495,114 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildLocalBackupSection(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: ElevatedButton.icon(
+            icon: const Icon(Icons.share),
+            label: const Text('匯出檔案'),
+            onPressed: () => _exportTransactions(context),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.file_upload),
+            label: const Text('匯入檔案'),
+            onPressed: () => _importTransactions(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _exportTransactions(BuildContext context) async {
+    try {
+      final jsonString = PortfolioService().exportData();
+      final tempDir = await getTemporaryDirectory();
+      final dateStr =
+          DateTime.now().toIso8601String().split('T')[0].replaceAll('-', '');
+      final file = File('${tempDir.path}/stock_backup_$dateStr.json');
+      await file.writeAsString(jsonString);
+
+      final result = await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Stock App Transaction Backup',
+      );
+
+      if (mounted && result.status == ShareResultStatus.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('匯出成功')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('匯出失敗: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _importTransactions(BuildContext context) async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final File file = File(result.files.single.path!);
+        final jsonString = await file.readAsString();
+
+        // Confirm overwrite
+        if (!mounted) return;
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('確認匯入'),
+            content: const Text('匯入將會覆蓋本機目前的交易紀錄，確定要繼續嗎？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('確定匯入', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        );
+
+        if (confirm != true) return;
+
+        await PortfolioService().importData(jsonString);
+
+        if (mounted) {
+          final provider = Provider.of<StockProvider>(context, listen: false);
+
+          final allSymbols =
+              PortfolioService().transactions.map((t) => t.symbol).toList();
+          await provider.addStocks(allSymbols);
+
+          await provider.refreshMetrics();
+          await provider.fetchStocks();
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('匯入成功')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('匯入失敗: $e')),
+        );
+      }
+    }
   }
 }

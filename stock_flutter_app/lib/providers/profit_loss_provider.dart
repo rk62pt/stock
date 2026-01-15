@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/portfolio_service.dart';
+import '../models/transaction.dart';
 
 enum ReportPeriod {
   week,
@@ -23,6 +24,7 @@ class ProfitLossProvider extends ChangeNotifier {
   bool _isLoading = false;
   List<ProfitLossItem> _reportItems = [];
   double _totalRealizedPL = 0;
+  double _totalRevenue = 0;
 
   // Getters
   ReportPeriod get selectedPeriod => _selectedPeriod;
@@ -31,6 +33,7 @@ class ProfitLossProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   List<ProfitLossItem> get reportItems => _reportItems;
   double get totalRealizedPL => _totalRealizedPL;
+  double get totalRevenue => _totalRevenue;
 
   ProfitLossProvider() {
     _initDateRange();
@@ -158,12 +161,14 @@ class ProfitLossProvider extends ChangeNotifier {
 
       _reportItems = [];
       _totalRealizedPL = 0;
+      _totalRevenue = 0;
 
       for (var entry in allMetrics.entries) {
         String symbol = entry.key;
         PortfolioMetrics metrics = entry.value;
 
         double stockTotalRealized = 0;
+        double stockTotalRevenue = 0;
         bool hasActivity = false;
 
         for (var item in metrics.history) {
@@ -172,6 +177,16 @@ class ProfitLossProvider extends ChangeNotifier {
             if (date.isAfter(_startDate.subtract(const Duration(seconds: 1))) &&
                 date.isBefore(_endDate.add(const Duration(seconds: 1)))) {
               stockTotalRealized += item.realizedPL!;
+
+              // Revenue Calculation
+              if (item.transaction.type == TransactionType.sell) {
+                stockTotalRevenue +=
+                    (item.transaction.shares * item.transaction.price);
+              } else if (item.transaction.type ==
+                  TransactionType.cashDividend) {
+                stockTotalRevenue += item.transaction.price; // Dividend amount
+              }
+
               hasActivity = true;
             }
           }
@@ -181,6 +196,7 @@ class ProfitLossProvider extends ChangeNotifier {
           _reportItems.add(
               ProfitLossItem(symbol: symbol, realizedPL: stockTotalRealized));
           _totalRealizedPL += stockTotalRealized;
+          _totalRevenue += stockTotalRevenue;
         }
       }
 

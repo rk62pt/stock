@@ -1,5 +1,6 @@
 // Imports updated
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'providers/stock_provider.dart';
 import 'providers/profit_loss_provider.dart';
@@ -23,6 +24,14 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: '台股即時看板',
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('zh', 'TW'), // Traditional Chinese
+        ],
         theme: ThemeData(
           useMaterial3: true,
           colorSchemeSeed: Colors.blue, // Gmail blue

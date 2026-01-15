@@ -4,13 +4,6 @@
 .vscode/
 *.log
 
-# Node.js (stock-app)
-node_modules/
-npm-debug.log
-yarn-error.log
-.next/
-build/
-key.json
 
 # Flutter (stock_flutter_app)
 .dart_tool/

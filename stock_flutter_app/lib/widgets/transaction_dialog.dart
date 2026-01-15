@@ -125,6 +125,26 @@ class _TransactionDialogState extends State<TransactionDialog> {
 
               const SizedBox(height: 10),
 
+              // Price Field
+              if (_type != TransactionType.stockDividend)
+                TextFormField(
+                  controller: _priceController,
+                  decoration: InputDecoration(
+                    labelText: _type == TransactionType.cashDividend
+                        ? '總金額 (元)'
+                        : '價格 (元)',
+                  ),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  validator: (val) {
+                    if (val == null || val.isEmpty) return '請輸入金額';
+                    if (double.tryParse(val) == null) return '請輸入有效數字';
+                    return null;
+                  },
+                ),
+
+              const SizedBox(height: 10),
+
               // Shares / Amount Field
               // For Cash Dividend, we use this field as 'Amount' (Total Cash) conceptually,
               // but we store it in Price? Or Shares?
@@ -141,24 +161,6 @@ class _TransactionDialogState extends State<TransactionDialog> {
                   validator: (val) {
                     if (val == null || val.isEmpty) return '請輸入股數';
                     if (int.tryParse(val) == null) return '請輸入有效數字';
-                    return null;
-                  },
-                ),
-
-              // Price Field
-              if (_type != TransactionType.stockDividend)
-                TextFormField(
-                  controller: _priceController,
-                  decoration: InputDecoration(
-                    labelText: _type == TransactionType.cashDividend
-                        ? '總金額 (元)'
-                        : '價格 (元)',
-                  ),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  validator: (val) {
-                    if (val == null || val.isEmpty) return '請輸入金額';
-                    if (double.tryParse(val) == null) return '請輸入有效數字';
                     return null;
                   },
                 ),

@@ -280,10 +280,38 @@ class _HomeScreenState extends State<HomeScreen> {
       length: 2,
       child: Column(
         children: [
-          const TabBar(
+          TabBar(
             tabs: [
-              Tab(text: '現股庫存'),
-              Tab(text: '已結算/無庫存'),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('現股庫存'),
+                    if (activeStocks.isNotEmpty) ...[
+                      SizedBox(width: 8),
+                      Badge(
+                        label: Text('${activeStocks.length}'),
+                        backgroundColor: Colors.red, // Or theme color
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('已結算/無庫存'),
+                    if (settledStocks.isNotEmpty) ...[
+                      SizedBox(width: 8),
+                      Badge(
+                        label: Text('${settledStocks.length}'),
+                        backgroundColor: Colors.grey,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
           Expanded(

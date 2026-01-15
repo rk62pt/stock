@@ -92,24 +92,27 @@ class _StockTableState extends State<StockTable> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: SingleChildScrollView(
-        child: DataTable(
-          sortColumnIndex: _sortColumnIndex,
-          sortAscending: _sortAscending,
-          columnSpacing: 16, // Reduced spacing for compact view
-          horizontalMargin: 8,
-          headingRowHeight: 48,
-          dataRowMinHeight: 56, // Increased height for 2 lines
-          dataRowMaxHeight: 56,
-          columns: [
-            _buildColumn('股號', 0),
-            _buildColumn('持股', 1, numeric: true),
-            _buildColumn('現價\n均價', 2, numeric: true), // Multiline header
-            _buildColumn('市值\n成本', 3, numeric: true),
-            _buildColumn('漲跌\n幅度', 4, numeric: true),
-            _buildColumn('損益\n報酬', 5, numeric: true),
-            const DataColumn(label: Text('')), // Actions
-          ],
-          rows: rowDataList.map((data) => _buildRow(context, data)).toList(),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 80.0), // Add padding for FAB
+          child: DataTable(
+            sortColumnIndex: _sortColumnIndex,
+            sortAscending: _sortAscending,
+            columnSpacing: 16, // Reduced spacing for compact view
+            horizontalMargin: 8,
+            headingRowHeight: 48,
+            dataRowMinHeight: 56, // Increased height for 2 lines
+            dataRowMaxHeight: 56,
+            columns: [
+              _buildColumn('股號', 0),
+              _buildColumn('持股', 1, numeric: true),
+              _buildColumn('現價\n均價', 2, numeric: true), // Multiline header
+              _buildColumn('市值\n成本', 3, numeric: true),
+              _buildColumn('漲跌\n幅度', 4, numeric: true),
+              _buildColumn('損益\n報酬', 5, numeric: true),
+              const DataColumn(label: Text('')), // Actions
+            ],
+            rows: rowDataList.map((data) => _buildRow(context, data)).toList(),
+          ),
         ),
       ),
     );

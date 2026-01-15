@@ -157,7 +157,64 @@ class _ProfitLossReportScreenState extends State<ProfitLossReportScreen> {
             ),
           ),
 
-          // 2. Report List
+          // 2. Summary Section (Moved to top)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  offset: const Offset(0, 2),
+                  blurRadius: 4,
+                )
+              ],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("總收入",
+                          style: TextStyle(fontSize: 14, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      Text(
+                        "\$${NumberFormat("#,##0").format(provider.totalRevenue)}",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text("總損益",
+                          style: TextStyle(fontSize: 14, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      Text(
+                        "${provider.totalRealizedPL > 0 ? '+' : ''}\$${NumberFormat("#,##0").format(provider.totalRealizedPL)}",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: provider.totalRealizedPL >= 0
+                              ? Colors.red
+                              : Colors.green,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 3. Report List
           Expanded(
             child: provider.isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -200,13 +257,11 @@ class _ProfitLossReportScreenState extends State<ProfitLossReportScreen> {
                                       ? 2
                                       : item.symbol.length)),
                             ),
-                            title: Text(item.symbol,
+                            title: Text("${item.symbol}  ${stockName ?? ''}",
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold)),
-                            subtitle:
-                                stockName != null ? Text(stockName) : null,
                             trailing: Text(
-                              "${item.realizedPL > 0 ? '+' : ''}${item.realizedPL.toStringAsFixed(0)}",
+                              "${item.realizedPL > 0 ? '+' : ''}${NumberFormat("#,##0").format(item.realizedPL)}",
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -220,37 +275,6 @@ class _ProfitLossReportScreenState extends State<ProfitLossReportScreen> {
                           );
                         },
                       ),
-          ),
-
-          // 3. Footer Summary
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  offset: const Offset(0, -2),
-                  blurRadius: 4,
-                )
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("區間總損益", style: TextStyle(fontSize: 16)),
-                Text(
-                  "${provider.totalRealizedPL > 0 ? '+' : ''}${provider.totalRealizedPL.toStringAsFixed(0)}",
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: provider.totalRealizedPL >= 0
-                        ? Colors.red
-                        : Colors.green,
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       ),

@@ -107,16 +107,26 @@ class _TransactionHistoryDialogState extends State<TransactionHistoryDialog> {
                   // Row 1: Holdings & Avg Cost
                   Row(
                     children: [
-                      Expanded(child: _buildSummaryItem('目前持股', '${_metrics.totalShares}')),
-                      Expanded(child: _buildSummaryItem('均價', _metrics.avgCost.toStringAsFixed(2))),
+                      Expanded(
+                          child: _buildSummaryItem(
+                              '目前持股', '${_metrics.totalShares}')),
+                      Expanded(
+                          child: _buildSummaryItem(
+                              '均價', _metrics.avgCost.toStringAsFixed(2))),
                     ],
                   ),
                   const SizedBox(height: 12),
                   // Row 2: Market Value & Total Cost
                   Row(
                     children: [
-                      Expanded(child: _buildSummaryItem('市值', NumberFormat("#,##0").format(marketValue), color: Colors.black)),
-                      Expanded(child: _buildSummaryItem('總成本', NumberFormat("#,##0").format(totalCost), color: Colors.grey)),
+                      Expanded(
+                          child: _buildSummaryItem(
+                              '市值', NumberFormat("#,##0").format(marketValue),
+                              color: Colors.black)),
+                      Expanded(
+                          child: _buildSummaryItem(
+                              '總成本', NumberFormat("#,##0").format(totalCost),
+                              color: Colors.grey)),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -127,14 +137,17 @@ class _TransactionHistoryDialogState extends State<TransactionHistoryDialog> {
                         child: _buildSummaryItem(
                           '未實現損益',
                           '${unrealizedProfit > 0 ? '+' : ''}${NumberFormat("#,##0").format(unrealizedProfit)}\n(${returnPercent > 0 ? '+' : ''}${returnPercent.toStringAsFixed(2)}%)',
-                          color: unrealizedProfit >= 0 ? Colors.red : Colors.green,
+                          color:
+                              unrealizedProfit >= 0 ? Colors.red : Colors.green,
                         ),
                       ),
                       Expanded(
                         child: _buildSummaryItem(
                           '已實現損益',
                           _metrics.totalRealizedProfit.toStringAsFixed(0),
-                          color: _metrics.totalRealizedProfit >= 0 ? Colors.red : Colors.green,
+                          color: _metrics.totalRealizedProfit >= 0
+                              ? Colors.red
+                              : Colors.green,
                         ),
                       ),
                     ],
@@ -185,7 +198,9 @@ class _TransactionHistoryDialogState extends State<TransactionHistoryDialog> {
                   } else if (t.type == TransactionType.stockDividend) {
                     titleText = '配股: ${t.shares} 股';
                   } else {
-                    titleText = '${t.shares} 股 @ ${t.price}';
+                    final totalAmount = t.shares * t.price;
+                    titleText =
+                        '${t.shares} 股 @ ${t.price} = ${NumberFormat("#,##0").format(totalAmount)}';
                   }
 
                   return Container(
@@ -496,12 +511,6 @@ class _AddEditTransactionDialogState extends State<AddEditTransactionDialog> {
                 }
               },
             ),
-            if (_type != TransactionType.cashDividend)
-              TextField(
-                controller: _sharesController,
-                decoration: const InputDecoration(labelText: '股數'),
-                keyboardType: TextInputType.number,
-              ),
             if (_type != TransactionType.stockDividend)
               TextField(
                 controller: _priceController,
@@ -511,6 +520,12 @@ class _AddEditTransactionDialogState extends State<AddEditTransactionDialog> {
                 ),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
+              ),
+            if (_type != TransactionType.cashDividend)
+              TextField(
+                controller: _sharesController,
+                decoration: const InputDecoration(labelText: '股數'),
+                keyboardType: TextInputType.number,
               ),
             if (_errorMessage != null)
               Padding(

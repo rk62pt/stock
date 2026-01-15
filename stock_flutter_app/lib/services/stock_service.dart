@@ -7,21 +7,39 @@ import 'database_helper.dart';
 
 class StockService {
   // API Key is now passed in
+  // API Key is now passed in
   static Future<List<StockData>> fetchStockQuotes(
       List<String> symbols, String apiKey) async {
     if (symbols.isEmpty || apiKey.isEmpty) return [];
 
     // Fugle API v1.0 is per-symbol.
-    // We should run them in parallel.
-    // However, to be nice to rate limits (if any), we could stagger them?
-    // Given the user said "60s limit", we are polling slow, so parallel fetch for 3-5 stocks is usually fine.
+    // We implement batching to respect rate limits (approx 60/min = 1/sec).
+    // Batch size: 3, Delay: 1s => 3 stocks / 1s = ~180/min burst, but safe for short lists.
+    // If list is long, it will take time but won't error.
 
-    final futures =
-        symbols.map((symbol) => _fetchSingleFugleQuote(symbol, apiKey));
-    final results = await Future.wait(futures);
+    final List<StockData> allResults = [];
+    const int batchSize = 3;
 
-    // Filter out nulls (failed requests)
-    return results.where((s) => s != null).cast<StockData>().toList();
+    for (var i = 0; i < symbols.length; i += batchSize) {
+      final end =
+          (i + batchSize < symbols.length) ? i + batchSize : symbols.length;
+      final batch = symbols.sublist(i, end);
+
+      print('Fetching batch ${i ~/ batchSize + 1}: $batch');
+
+      final futures =
+          batch.map((symbol) => _fetchSingleFugleQuote(symbol, apiKey));
+      final results = await Future.wait(futures);
+
+      allResults.addAll(results.where((s) => s != null).cast<StockData>());
+
+      // Add delay if there are more batches to come
+      if (end < symbols.length) {
+        await Future.delayed(const Duration(milliseconds: 1000));
+      }
+    }
+
+    return allResults;
   }
 
   static Future<StockData?> _fetchSingleFugleQuote(
