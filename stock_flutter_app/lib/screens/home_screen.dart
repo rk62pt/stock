@@ -120,7 +120,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               )
             : const Icon(Icons.refresh),
-        label: Text(stockProvider.isUpdating ? '更新中...' : '更新'),
+        label: Text(stockProvider.isUpdating 
+            ? '${stockProvider.updatedCount}/${stockProvider.totalUpdateCount} 更新中...' 
+            : '更新'),
         backgroundColor:
             Theme.of(context).colorScheme.primaryContainer.withOpacity(0.8),
         elevation:
@@ -305,9 +307,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final settledStocks = stockProvider.stocks
         .where((s) => !stockProvider.isStockActive(s.symbol))
         .toList();
+    final archivedStocks = stockProvider.archivedStocks;
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           TabBar(
@@ -342,6 +345,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('封存'),
+                    if (archivedStocks.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Badge(
+                        label: Text('${archivedStocks.length}'),
+                        backgroundColor: Colors.grey,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
           Expanded(
@@ -354,6 +372,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 StockTable(
                   stocks: settledStocks,
                   onRemove: (s) => stockProvider.removeStock(s),
+                ),
+                StockTable(
+                  stocks: archivedStocks,
+                  onRemove: (s) => {},
                 ),
               ],
             ),

@@ -15,6 +15,9 @@ class StockProvider with ChangeNotifier {
   String? _error;
   String _apiKey = '';
 
+  int _updatedCount = 0;
+  int _totalUpdateCount = 0;
+
   // Dashboard Metrics State
   Map<String, PortfolioMetrics> _symbolMetrics = {};
   double _periodRealizedPL = 0;
@@ -34,12 +37,36 @@ class StockProvider with ChangeNotifier {
   String? get error => _error;
   String get apiKey => _apiKey;
 
+  int get updatedCount => _updatedCount;
+  int get totalUpdateCount => _totalUpdateCount;
+
   TimePeriod get selectedPeriod => _selectedPeriod;
   double get periodRealizedPL => _periodRealizedPL;
 
   bool get includeFees => _includeFees;
   bool get includeDividends => _includeDividends;
   double get brokerDiscount => _brokerDiscount;
+
+  List<String> get archivedSymbols {
+    final archived = <String>[];
+    for (var symbol in _symbolMetrics.keys) {
+      if (!_watchlist.contains(symbol)) {
+        archived.add(symbol);
+      }
+    }
+    return archived;
+  }
+
+  List<StockData> get archivedStocks {
+    return archivedSymbols.map((sym) => StockData(
+      symbol: sym,
+      regularMarketPrice: 0.0,
+      regularMarketChange: 0.0,
+      regularMarketChangePercent: 0.0,
+      shortName: null,
+      longName: null,
+    )).toList();
+  }
 
   StockProvider() {
     _init();
@@ -177,9 +204,22 @@ class StockProvider with ChangeNotifier {
     // Only show loading indicator on initial load to avoid flickering during polling
     if (_stocks.isEmpty) {
       _isLoading = true;
+      _totalUpdateCount = _watchlist.length;
+      _updatedCount = 0;
       notifyListeners();
     } else {
       _isUpdating = true; // Show updating state for manual refresh
+      _totalUpdateCount = _watchlist.length;
+      _updatedCount = 0;
+      // Reset regularMarketChange to 0 when starting update so daily P/L accumulates from 0
+      _stocks = _stocks.map((s) => StockData(
+        symbol: s.symbol,
+        regularMarketPrice: s.regularMarketPrice,
+        regularMarketChange: 0.0,
+        regularMarketChangePercent: 0.0,
+        shortName: s.shortName,
+        longName: s.longName,
+      )).toList();
       notifyListeners();
     }
 
@@ -190,6 +230,8 @@ class StockProvider with ChangeNotifier {
       await for (final newBatch
           in StockService.streamStockQuotes(_watchlist, _apiKey)) {
         if (newBatch.isEmpty) continue;
+
+        _updatedCount += newBatch.length;
 
         // Create map for this batch
         final batchMap = {for (var s in newBatch) s.symbol: s};
@@ -412,11 +454,6 @@ class StockProvider with ChangeNotifier {
 
   // Helper to get metrics for a stock
   PortfolioMetrics? getMetrics(String symbol) => _symbolMetrics[symbol];
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
 }
 
 enum TimePeriod {

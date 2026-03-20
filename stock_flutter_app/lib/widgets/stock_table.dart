@@ -48,6 +48,8 @@ class _StockTableState extends State<StockTable> {
         }
       }
 
+      final double dailyProfitLoss = stock.regularMarketChange * shares;
+
       return _StockRowData(
         stock: stock,
         shares: shares,
@@ -55,6 +57,7 @@ class _StockTableState extends State<StockTable> {
         marketPrice: marketPrice,
         change: stock.regularMarketChange,
         changePercent: stock.regularMarketChangePercent,
+        dailyProfitLoss: dailyProfitLoss,
         profitLoss: profitLoss,
         profitLossPercent: profitLossPercent,
         marketValue: shares > 0 ? (shares * marketPrice) : 0,
@@ -78,10 +81,13 @@ class _StockTableState extends State<StockTable> {
         case 3: // MarketValue/TotalCost -> Sort by Market Value
           cmp = a.marketValue.compareTo(b.marketValue);
           break;
-        case 4: // Change/Change% -> Sort by Change Amount
-          cmp = a.change.compareTo(b.change);
+        case 4: // Change/Change% -> Sort by Change Percent
+          cmp = a.changePercent.compareTo(b.changePercent);
           break;
-        case 5: // P/L / P/L% -> Sort by P/L Amount
+        case 5: // Daily P/L
+          cmp = a.dailyProfitLoss.compareTo(b.dailyProfitLoss);
+          break;
+        case 6: // P/L / P/L% -> Sort by P/L Amount
           cmp = a.profitLoss.compareTo(b.profitLoss);
           break;
       }
@@ -108,8 +114,8 @@ class _StockTableState extends State<StockTable> {
               _buildColumn('現價\n均價', 2, numeric: true), // Multiline header
               _buildColumn('市值\n成本', 3, numeric: true),
               _buildColumn('漲跌\n幅度', 4, numeric: true),
-              _buildColumn('損益\n報酬', 5, numeric: true),
-              const DataColumn(label: Text('')), // Actions
+              _buildColumn('當日\n損益', 5, numeric: true),
+              _buildColumn('累積\n損益', 6, numeric: true),
             ],
             rows: rowDataList.map((data) => _buildRow(context, data)).toList(),
           ),
@@ -222,6 +228,24 @@ class _StockTableState extends State<StockTable> {
             ],
           ),
         ),
+        // Daily P/L
+        DataCell(
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${data.dailyProfitLoss > 0 ? '+' : ''}${intFormat.format(data.dailyProfitLoss)}',
+                style: TextStyle(
+                  color: data.dailyProfitLoss > 0
+                      ? Colors.red
+                      : (data.dailyProfitLoss < 0 ? Colors.green : Colors.grey),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
         // P/L / P/L%
         DataCell(
           Column(
@@ -237,14 +261,6 @@ class _StockTableState extends State<StockTable> {
                 style: TextStyle(fontSize: 11, color: plColor),
               ),
             ],
-          ),
-        ),
-
-        // Actions
-        DataCell(
-          IconButton(
-            icon: const Icon(Icons.close, size: 18, color: Colors.grey),
-            onPressed: () => _showDeleteConfirmation(context, data.stock),
           ),
         ),
       ],
@@ -264,30 +280,6 @@ class _StockTableState extends State<StockTable> {
       Provider.of<StockProvider>(context, listen: false).refreshMetrics();
     }
   }
-
-  void _showDeleteConfirmation(BuildContext context, StockData stock) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('確認刪除'),
-        content: Text('確定要刪除 ${stock.symbol} 嗎？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              widget.onRemove(stock.symbol);
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('刪除'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _StockRowData {
@@ -297,6 +289,7 @@ class _StockRowData {
   final double marketPrice;
   final double change;
   final double changePercent;
+  final double dailyProfitLoss;
   final double profitLoss;
   final double profitLossPercent;
   final double marketValue;
@@ -309,6 +302,7 @@ class _StockRowData {
     required this.marketPrice,
     required this.change,
     required this.changePercent,
+    required this.dailyProfitLoss,
     required this.profitLoss,
     required this.profitLossPercent,
     required this.marketValue,

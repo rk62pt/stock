@@ -53,7 +53,14 @@ class GoogleDriveService extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    await _googleSignIn.signOut();
+    try {
+      await _googleSignIn.disconnect();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Disconnect failed, falling back to signOut: $e');
+      }
+      await _googleSignIn.signOut();
+    }
   }
 
   // --- Drive Operations ---

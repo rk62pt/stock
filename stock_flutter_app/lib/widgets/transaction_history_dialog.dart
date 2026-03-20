@@ -94,7 +94,28 @@ class _TransactionHistoryDialogState extends State<TransactionHistoryDialog> {
     return AlertDialog(
       insetPadding:
           const EdgeInsets.symmetric(horizontal: 10.0, vertical: 24.0),
-      title: Text('${widget.symbol} ${widget.stockName ?? ''} 交易紀錄'),
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              '${widget.symbol} ${widget.stockName ?? ''} 交易紀錄',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Builder(
+            builder: (ctx) {
+              final provider = Provider.of<StockProvider>(context);
+              final isArchived = !provider.watchlist.contains(widget.symbol);
+              return IconButton(
+                icon: Icon(isArchived ? Icons.unarchive : Icons.archive, color: Colors.grey),
+                tooltip: isArchived ? '取消封存' : '封存股票',
+                onPressed: () => isArchived ? _unarchiveStock(context) : _confirmArchiveStock(context),
+              );
+            }
+          ),
+        ],
+      ),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -322,6 +343,36 @@ class _TransactionHistoryDialogState extends State<TransactionHistoryDialog> {
           ),
         ],
       ),
+    );
+  }
+
+  void _confirmArchiveStock(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('封存此股票'),
+        content: const Text('封存後這檔股票將被移至「封存」頁籤，不會隨著首頁更新最新價格，但您的歷史交易紀錄仍會保留。\n\n確定要封存嗎？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx); // Close confirmation dialog
+              Provider.of<StockProvider>(context, listen: false).removeStock(widget.symbol);
+            },
+            child: const Text('確認封存', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _unarchiveStock(BuildContext context) {
+    Provider.of<StockProvider>(context, listen: false).addStock(widget.symbol);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已取消封存，股票已加回庫存清單')),
     );
   }
 
