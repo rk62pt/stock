@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math'; // For min
+import 'package:intl/intl.dart';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import '../widgets/stock_table.dart';
 import '../models/stock.dart';
 import 'settings_screen.dart';
 import 'profit_loss_report_screen.dart';
+import 'transaction_history_report_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -100,14 +102,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          stockProvider.fetchStocks();
-          // Also refresh metrics
-          stockProvider.refreshMetrics();
-        },
-        icon: const Icon(Icons.refresh),
-        label: const Text('更新報價'),
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        onPressed: stockProvider.isUpdating
+            ? null
+            : () {
+                stockProvider.fetchStocks();
+                // Also refresh metrics
+                stockProvider.refreshMetrics();
+              },
+        icon: stockProvider.isUpdating
+            ? Container(
+                width: 24,
+                height: 24,
+                padding: const EdgeInsets.all(2.0),
+                child: const CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 3,
+                ),
+              )
+            : const Icon(Icons.refresh),
+        label: Text(stockProvider.isUpdating ? '更新中...' : '更新'),
+        backgroundColor:
+            Theme.of(context).colorScheme.primaryContainer.withOpacity(0.8),
+        elevation:
+            0, // Optional: remove shadow if transparency makes it look weird
         foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
       ),
       body: SafeArea(
@@ -157,6 +174,19 @@ class _HomeScreenState extends State<HomeScreen> {
                               MaterialPageRoute(
                                   builder: (_) =>
                                       const ProfitLossReportScreen()),
+                            );
+                          },
+                        ),
+                        // History Report Icon
+                        IconButton(
+                          icon: const Icon(Icons.receipt_long),
+                          tooltip: '交易紀錄',
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const TransactionHistoryReportScreen()),
                             );
                           },
                         ),
@@ -437,7 +467,17 @@ class DashboardSummaryWidget extends StatelessWidget {
                       ],
                     ),
                   ],
-                )
+                ),
+                if (provider.lastUpdatedTime != null) ...[
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      "最後更新: ${DateFormat('yyyy/MM/dd HH:mm').format(provider.lastUpdatedTime!)}",
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                  ),
+                ],
               ],
             )));
   }

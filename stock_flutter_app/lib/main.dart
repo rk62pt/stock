@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'providers/stock_provider.dart';
 import 'providers/profit_loss_provider.dart';
+import 'providers/transaction_history_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/google_drive_service.dart';
 
@@ -20,6 +21,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => StockProvider()),
         ChangeNotifierProvider(create: (_) => ProfitLossProvider()),
+        ChangeNotifierProvider(create: (_) => TransactionHistoryProvider()),
         ChangeNotifierProvider(create: (_) => GoogleDriveService()..init()),
       ],
       child: MaterialApp(

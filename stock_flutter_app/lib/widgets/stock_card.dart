@@ -20,13 +20,45 @@ class StockCard extends StatefulWidget {
   State<StockCard> createState() => _StockCardState();
 }
 
-class _StockCardState extends State<StockCard> {
+class _StockCardState extends State<StockCard>
+    with SingleTickerProviderStateMixin {
   Map<String, dynamic> _holdings = {};
+  late AnimationController _flashController;
+  late Animation<Color?> _flashAnimation;
 
   @override
   void initState() {
     super.initState();
     _loadHoldings();
+
+    // Animation for flash effect
+    _flashController = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 500));
+    _flashAnimation = ColorTween(
+            begin: Colors.transparent, end: Colors.white.withOpacity(0.5))
+        .animate(
+            CurvedAnimation(parent: _flashController, curve: Curves.easeInOut));
+
+    _flashController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _flashController.reverse();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(StockCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.stock.lastUpdated != oldWidget.stock.lastUpdated) {
+      // Trigger flash if timestamp changed
+      _flashController.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _flashController.dispose();
+    super.dispose();
   }
 
   // Reload holdings when card updates or init
@@ -120,8 +152,18 @@ class _StockCardState extends State<StockCard> {
       elevation: 2,
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+      child: AnimatedBuilder(
+        animation: _flashAnimation,
+        builder: (context, child) {
+          return Container(
+            decoration: BoxDecoration(
+              color: _flashAnimation.value,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.all(16.0),
+            child: child,
+          );
+        },
         child: Column(
           children: [
             // Header Row

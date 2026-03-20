@@ -10,6 +10,8 @@ class StockProvider with ChangeNotifier {
   List<String> _watchlist = ['2330', '0050', '2454']; // Removed .TW
   List<StockData> _stocks = [];
   bool _isLoading = false;
+  bool _isUpdating = false; // Added for manual update state
+  DateTime? _lastUpdatedTime;
   String? _error;
   String _apiKey = '';
 
@@ -27,6 +29,8 @@ class StockProvider with ChangeNotifier {
   List<String> get watchlist => _watchlist;
   List<StockData> get stocks => _stocks;
   bool get isLoading => _isLoading;
+  bool get isUpdating => _isUpdating;
+  DateTime? get lastUpdatedTime => _lastUpdatedTime;
   String? get error => _error;
   String get apiKey => _apiKey;
 
@@ -48,7 +52,26 @@ class StockProvider with ChangeNotifier {
     await PortfolioService().loadTransactions(); // Load local data on startup
     await _refreshPortfolioMetrics(); // Load initial portfolio data
     await _refreshPortfolioMetrics(); // Load initial portfolio data
+    await _refreshPortfolioMetrics(); // Load initial portfolio data
+    await _loadLastUpdatedTime(); // Load persisted time
     await _loadCachedPrices(); // Load cached prices for immediate UI
+  }
+
+  Future<void> _loadLastUpdatedTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ts = prefs.getInt('lastUpdatedTime');
+    if (ts != null) {
+      _lastUpdatedTime = DateTime.fromMillisecondsSinceEpoch(ts);
+      notifyListeners();
+    }
+  }
+
+  Future<void> _saveLastUpdatedTime() async {
+    if (_lastUpdatedTime != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+          'lastUpdatedTime', _lastUpdatedTime!.millisecondsSinceEpoch);
+    }
   }
 
   Future<void> _loadCachedPrices() async {
@@ -155,30 +178,53 @@ class StockProvider with ChangeNotifier {
     if (_stocks.isEmpty) {
       _isLoading = true;
       notifyListeners();
+    } else {
+      _isUpdating = true; // Show updating state for manual refresh
+      notifyListeners();
     }
 
     try {
       _error = null;
-      final stocks = await StockService.fetchStockQuotes(_watchlist, _apiKey);
-      _stocks = stocks;
+      // Progressive Update using Stream
+      // Progressive Update using Stream
+      await for (final newBatch
+          in StockService.streamStockQuotes(_watchlist, _apiKey)) {
+        if (newBatch.isEmpty) continue;
 
-      // Sort to match watchlist order
-      // Create a map for quick lookup
-      final stockMap = {for (var s in stocks) s.symbol: s};
+        // Create map for this batch
+        final batchMap = {for (var s in newBatch) s.symbol: s};
 
-      // Rebuild list based on watchlist order, filtering out any missing ones
-      // Rebuild list based on watchlist order, filtering out any missing ones
-      _stocks = _watchlist
-          .map((symbol) => stockMap[symbol])
-          .where((s) => s != null)
-          .cast<StockData>()
-          .toList();
+        // Merge this batch into existing _stocks
+        // We iterate through valid _stocks to update them, or potential placeholders
+        // Actually, safer to rebuild _stocks list to ensure order, but that might flicker.
+        // Better: Update the objects in place if possible, or replace the list.
+        // Since we want to notifyListeners() each time, replacing list is standard Provider way.
 
-      // Save to DB
-      // We convert StockData to Map for the helper
-      // StockData doesn't have toJson currently based on view (only fromJson).
-      // We'll create a quick helper or add toJson to model.
-      // Or just map it here.
+        // Get current state map
+        final currentMap = {for (var s in _stocks) s.symbol: s};
+
+        List<StockData> merged = [];
+        for (var symbol in _watchlist) {
+          if (batchMap.containsKey(symbol)) {
+            merged.add(batchMap[symbol]!);
+          } else if (currentMap.containsKey(symbol)) {
+            merged.add(currentMap[symbol]!);
+          } else {
+            merged.add(StockData(
+              symbol: symbol,
+              regularMarketPrice: 0,
+              regularMarketChange: 0,
+              regularMarketChangePercent: 0,
+              shortName: symbol,
+              longName: symbol,
+            ));
+          }
+        }
+        _stocks = merged;
+        notifyListeners(); // Update UI immediately after this batch
+      }
+
+      // Final save to DB (save all, as some might have been updated from previous runs too)
       final List<Map<String, dynamic>> toSave = _stocks.map((s) {
         return {
           'symbol': s.symbol,
@@ -195,6 +241,9 @@ class StockProvider with ChangeNotifier {
       print(e);
     } finally {
       _isLoading = false;
+      _isUpdating = false;
+      _lastUpdatedTime = DateTime.now();
+      _saveLastUpdatedTime();
       notifyListeners();
     }
   }
@@ -203,7 +252,28 @@ class StockProvider with ChangeNotifier {
     if (!_watchlist.contains(symbol)) {
       _watchlist.add(symbol);
       await _saveWatchlist();
-      await fetchStocks();
+
+      // Optimize: Fetch only the new stock instead of refreshing all
+      try {
+        final newItems = await StockService.fetchStockQuotes([symbol], _apiKey);
+        if (newItems.isNotEmpty) {
+          _stocks.add(newItems.first);
+        } else {
+          // Add placeholder if fetch fails or returns empty
+          _stocks.add(StockData(
+            symbol: symbol,
+            regularMarketPrice: 0,
+            regularMarketChange: 0,
+            regularMarketChangePercent: 0,
+            shortName: symbol,
+            longName: symbol,
+          ));
+        }
+        notifyListeners();
+      } catch (e) {
+        print('Error adding stock: $e');
+        notifyListeners();
+      }
     }
   }
 

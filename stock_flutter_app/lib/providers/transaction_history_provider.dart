@@ -1,42 +1,45 @@
 import 'package:flutter/material.dart';
 import '../services/portfolio_service.dart';
 import '../models/transaction.dart';
+import 'profit_loss_provider.dart'; // Reuse ReportPeriod enum
 
-enum ReportPeriod {
-  day, // Added day
-  week,
-  month,
-  quarter,
-  year,
-  custom,
-}
-
-class ProfitLossItem {
-  final String symbol;
-  final double realizedPL;
-  ProfitLossItem({required this.symbol, required this.realizedPL});
-}
-
-class ProfitLossProvider extends ChangeNotifier {
-  ReportPeriod _selectedPeriod = ReportPeriod.month;
+class TransactionHistoryProvider extends ChangeNotifier {
+  ReportPeriod _selectedPeriod = ReportPeriod.day; // Default to Day
   DateTime _startDate = DateTime.now();
   DateTime _endDate = DateTime.now();
 
   bool _isLoading = false;
-  List<ProfitLossItem> _reportItems = [];
-  double _totalRealizedPL = 0;
-  double _totalRevenue = 0;
+  List<Transaction> _transactions = [];
 
   // Getters
   ReportPeriod get selectedPeriod => _selectedPeriod;
   DateTime get startDate => _startDate;
   DateTime get endDate => _endDate;
   bool get isLoading => _isLoading;
-  List<ProfitLossItem> get reportItems => _reportItems;
-  double get totalRealizedPL => _totalRealizedPL;
-  double get totalRevenue => _totalRevenue;
+  List<Transaction> get transactions => _transactions;
 
-  ProfitLossProvider() {
+  // New Getters for Totals
+  double get totalIncome {
+    return _transactions.fold(0.0, (sum, t) {
+      if (t.type == TransactionType.sell) {
+        return sum + (t.shares * t.price);
+      } else if (t.type == TransactionType.cashDividend) {
+        return sum + t.price; // For cash dividend, price stores the amount
+      }
+      return sum;
+    });
+  }
+
+  double get totalExpense {
+    return _transactions.fold(0.0, (sum, t) {
+      if (t.type == TransactionType.buy) {
+        return sum + (t.shares * t.price);
+      }
+      return sum;
+    });
+  }
+
+  TransactionHistoryProvider() {
     _initDateRange();
   }
 
@@ -50,8 +53,7 @@ class ProfitLossProvider extends ChangeNotifier {
     _selectedPeriod = period;
 
     if (_selectedPeriod == ReportPeriod.custom) {
-      // Refresh with current range state, ensuring listeners are notified
-      _fetchReportData();
+      _fetchData();
     } else {
       _updateDateRange(DateTime.now());
     }
@@ -64,13 +66,12 @@ class ProfitLossProvider extends ChangeNotifier {
     // Align to start/end of day
     _startDate = DateTime(start.year, start.month, start.day);
     _endDate = DateTime(end.year, end.month, end.day, 23, 59, 59);
-    _fetchReportData();
+    _fetchData();
   }
 
   void nextPeriod() {
-    if (_selectedPeriod == ReportPeriod.custom) return; // Disable for custom
+    if (_selectedPeriod == ReportPeriod.custom) return;
 
-    // Move start date forward by 1 unit of period
     DateTime newAnchor;
     switch (_selectedPeriod) {
       case ReportPeriod.day:
@@ -95,7 +96,7 @@ class ProfitLossProvider extends ChangeNotifier {
   }
 
   void previousPeriod() {
-    if (_selectedPeriod == ReportPeriod.custom) return; // Disable for custom
+    if (_selectedPeriod == ReportPeriod.custom) return;
 
     DateTime newAnchor;
     switch (_selectedPeriod) {
@@ -130,7 +131,6 @@ class ProfitLossProvider extends ChangeNotifier {
         break;
 
       case ReportPeriod.week:
-        // Week starts on Monday
         final daysToSubtract = anchor.weekday - 1;
         _startDate = DateTime(anchor.year, anchor.month, anchor.day)
             .subtract(Duration(days: daysToSubtract));
@@ -161,60 +161,28 @@ class ProfitLossProvider extends ChangeNotifier {
         break;
     }
 
-    _fetchReportData();
+    _fetchData();
   }
 
-  Future<void> _fetchReportData() async {
+  Future<void> _fetchData() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final allMetrics = await PortfolioService().getAllPortfolioMetrics();
+      // Get all transactions
+      final allTransactions = PortfolioService().transactions;
 
-      _reportItems = [];
-      _totalRealizedPL = 0;
-      _totalRevenue = 0;
+      // Filter by date
+      _transactions = allTransactions.where((t) {
+        return t.date
+                .isAfter(_startDate.subtract(const Duration(seconds: 1))) &&
+            t.date.isBefore(_endDate.add(const Duration(seconds: 1)));
+      }).toList();
 
-      for (var entry in allMetrics.entries) {
-        String symbol = entry.key;
-        PortfolioMetrics metrics = entry.value;
-
-        double stockTotalRealized = 0;
-        double stockTotalRevenue = 0;
-        bool hasActivity = false;
-
-        for (var item in metrics.history) {
-          if (item.realizedPL != null) {
-            final date = item.transaction.date;
-            if (date.isAfter(_startDate.subtract(const Duration(seconds: 1))) &&
-                date.isBefore(_endDate.add(const Duration(seconds: 1)))) {
-              stockTotalRealized += item.realizedPL!;
-
-              // Revenue Calculation
-              if (item.transaction.type == TransactionType.sell) {
-                stockTotalRevenue +=
-                    (item.transaction.shares * item.transaction.price);
-              } else if (item.transaction.type ==
-                  TransactionType.cashDividend) {
-                stockTotalRevenue += item.transaction.price; // Dividend amount
-              }
-
-              hasActivity = true;
-            }
-          }
-        }
-
-        if (hasActivity) {
-          _reportItems.add(
-              ProfitLossItem(symbol: symbol, realizedPL: stockTotalRealized));
-          _totalRealizedPL += stockTotalRealized;
-          _totalRevenue += stockTotalRevenue;
-        }
-      }
-
-      _reportItems.sort((a, b) => b.realizedPL.compareTo(a.realizedPL));
+      // Sort by date (descending)
+      _transactions.sort((a, b) => b.date.compareTo(a.date));
     } catch (e) {
-      print("Error fetching P/L Report: $e");
+      print("Error fetching Transaction History: $e");
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -222,6 +190,6 @@ class ProfitLossProvider extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    await _fetchReportData();
+    await _fetchData();
   }
 }

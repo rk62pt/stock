@@ -5,6 +5,7 @@ class StockData {
   final double regularMarketChangePercent;
   final String? shortName;
   final String? longName;
+  final DateTime? lastUpdated;
 
   StockData({
     required this.symbol,
@@ -13,16 +14,21 @@ class StockData {
     required this.regularMarketChangePercent,
     this.shortName,
     this.longName,
+    this.lastUpdated,
   });
 
   factory StockData.fromJson(Map<String, dynamic> json) {
     return StockData(
       symbol: json['symbol'] ?? '',
-      regularMarketPrice: (json['regularMarketPrice'] as num?)?.toDouble() ?? 0.0,
-      regularMarketChange: (json['regularMarketChange'] as num?)?.toDouble() ?? 0.0,
-      regularMarketChangePercent: (json['regularMarketChangePercent'] as num?)?.toDouble() ?? 0.0,
+      regularMarketPrice:
+          (json['regularMarketPrice'] as num?)?.toDouble() ?? 0.0,
+      regularMarketChange:
+          (json['regularMarketChange'] as num?)?.toDouble() ?? 0.0,
+      regularMarketChangePercent:
+          (json['regularMarketChangePercent'] as num?)?.toDouble() ?? 0.0,
       shortName: json['shortName'] as String?,
       longName: json['longName'] as String?,
+      lastUpdated: DateTime.now(), // Set timestamp on creation
     );
   }
 }

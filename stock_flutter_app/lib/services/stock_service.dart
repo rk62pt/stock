@@ -14,8 +14,8 @@ class StockService {
 
     // Fugle API v1.0 is per-symbol.
     // We implement batching to respect rate limits (approx 60/min = 1/sec).
-    // Batch size: 3, Delay: 1s => 3 stocks / 1s = ~180/min burst, but safe for short lists.
-    // If list is long, it will take time but won't error.
+    // Batch size: 3, Delay: 3s => 3 stocks / 3s = ~60/min burst.
+    // This is slower but prevents 429 errors for large portfolios (>60 stocks).
 
     final List<StockData> allResults = [];
     const int batchSize = 3;
@@ -35,11 +35,43 @@ class StockService {
 
       // Add delay if there are more batches to come
       if (end < symbols.length) {
-        await Future.delayed(const Duration(milliseconds: 1000));
+        await Future.delayed(const Duration(milliseconds: 3000));
       }
     }
 
     return allResults;
+  }
+
+  // Stream version for progressive UI updates
+  static Stream<List<StockData>> streamStockQuotes(
+      List<String> symbols, String apiKey) async* {
+    if (symbols.isEmpty || apiKey.isEmpty) return;
+
+    const int batchSize = 3;
+
+    for (var i = 0; i < symbols.length; i += batchSize) {
+      final end =
+          (i + batchSize < symbols.length) ? i + batchSize : symbols.length;
+      final batch = symbols.sublist(i, end);
+
+      print('Fetching batch ${i ~/ batchSize + 1}: $batch');
+
+      final futures =
+          batch.map((symbol) => _fetchSingleFugleQuote(symbol, apiKey));
+      final results = await Future.wait(futures);
+
+      final validResults =
+          results.where((s) => s != null).cast<StockData>().toList();
+
+      if (validResults.isNotEmpty) {
+        yield validResults;
+      }
+
+      // Add delay if there are more batches to come
+      if (end < symbols.length) {
+        await Future.delayed(const Duration(milliseconds: 3000));
+      }
+    }
   }
 
   static Future<StockData?> _fetchSingleFugleQuote(
